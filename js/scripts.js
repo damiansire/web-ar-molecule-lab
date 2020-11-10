@@ -43,14 +43,15 @@ function setup() {
         }))
 
     //Los sliders
-    let acumulateHeight = 10;
-    backgroundSliders = createSlidersInProcessing(width, acumulateHeight, 3, "Colores de fondo")
+    let acumulateHeight = 100;
+    backgroundSliders = createSlidersInProcessing(width + 30, acumulateHeight, 3, "Colores de fondo")
     acumulateHeight += getSlidersWithTextHeight(3);
-    figureColorSliders = createSlidersInProcessing(width, acumulateHeight, 3, "Color de la figura")
+    figureColorSliders = createSlidersInProcessing(width + 30, acumulateHeight, 3, "Color de la figura")
     acumulateHeight += getSlidersWithTextHeight(3);
-    figureSizeSlider = createSliderInProcessing(width, acumulateHeight, "Tamaño", 0, 100, 100);
+    figureSizeSlider = createSliderInProcessing(width + 30, acumulateHeight, "Tamaño", 0, 100, 100);
+    figureSizeSlider.value(100 / 2)
     acumulateHeight += getSlidersWithTextHeight(1);
-    figureRotateSlider = createSliderInProcessing(width, acumulateHeight, "Angular de rotacion", 0, 100, 100);
+    figureRotateSlider = createSliderInProcessing(width + 30, acumulateHeight, "Angular de rotacion", 0, 10, 1);
     acumulateHeight += getSlidersWithTextHeight(1);
 
 }
@@ -90,13 +91,14 @@ function getLastPrediction() {
 }
 
 function drawFigure(x, y, z) {
+    let angleRotation = figureRotateSlider.value() / 10;
     //applyBackgroundColor se activa realmente unicamente si quiere color
     applyBackgroundColor()
     translate(x, y, z);
     push();
-    rotateZ(frameCount * 0.01);
-    rotateX(frameCount * 0.01);
-    rotateY(frameCount * 0.01);
+    rotateZ(frameCount * angleRotation);
+    rotateX(frameCount * angleRotation);
+    rotateY(frameCount * angleRotation);
     applyBackgroundColorToFigure()
     drawFigureFunction(figureName)
     pop();
