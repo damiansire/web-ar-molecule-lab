@@ -3,27 +3,39 @@
 
 <head>
     <!-- Global site tag (gtag.js) - Google Analytics -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-ELNQT5K3ND"></script>
-<script>
-  window.dataLayer = window.dataLayer || [];
-  function gtag(){dataLayer.push(arguments);}
-  gtag('js', new Date());
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-ELNQT5K3ND"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
 
-  gtag('config', 'G-ELNQT5K3ND');
-</script>
+        function gtag() {
+            dataLayer.push(arguments);
+        }
+        gtag('js', new Date());
+
+        gtag('config', 'G-ELNQT5K3ND');
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>IA for all</title>
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 
 <body>
-    <input id="figureSize">
-    <button class="figureButton" data-id="Cuadrado">Cuadrado</button>
-    <button class="figureButton" data-id="Cubo">Cubo</button>
-    <button class="figureButton" data-id="Cilindro">Cilindro</button>
-    <button class="figureButton" data-id="Cono">Cono</button>
-    <button class="figureButton" data-id="Toro">Toro</button>
-    <button class="figureButton" data-id="Esfera">Esfera</button>
+
+    <div>
+        <input id="figureSize" type="number">
+        <button class="figureButton" data-id="None">Nada</button>
+        <button class="figureButton" data-id="Cuadrado">Cuadrado</button>
+        <button class="figureButton" data-id="Cubo">Cubo</button>
+        <button class="figureButton" data-id="Cilindro">Cilindro</button>
+        <button class="figureButton" data-id="Cono">Cono</button>
+        <button class="figureButton" data-id="Toro">Toro</button>
+        <button class="figureButton" data-id="Esfera">Esfera</button>
+    </div>
+    <div>
+        <button class="colorButton">Color</button>
+        <button class="backgroundButton">Background</button>
+    </div>
     <!-- Importo processing-->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.0.0/p5.min.js"></script>
     <!-- Importo ml5, la libreria con los modelos de machine learning-->
