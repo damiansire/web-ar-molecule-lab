@@ -102,32 +102,30 @@ function drawFigure(x, y, z) {
     pop();
 }
 
-document.querySelector("#figureSize").addEventListener("input", (event) => {
-    figureSize = int(event.data);
-})
 
 //Un strategy pattern medio turbio xD
 function drawFigureFunction(figureName) {
+    let sliderSizeValue = figureSizeSlider.value();
     switch (figureName) {
         case "None":
             break;
         case "Cuadrado":
-            return plane(70);
+            return plane(sliderSizeValue);
             break;
         case "Cubo":
-            return box(70, 70, 70);
+            return box(sliderSizeValue, sliderSizeValue, sliderSizeValue);
             break;
         case "Cilindro":
-            return cylinder(70, 70);
+            return cylinder(sliderSizeValue, sliderSizeValue);
             break;
         case "Cono":
-            return cone(70, 70);
+            return cone(sliderSizeValue, sliderSizeValue);
             break;
         case "Toro":
-            return torus(70, 20);
+            return torus(sliderSizeValue, 20);
             break;
         case "Esfera":
-            return sphere(70);
+            return sphere(sliderSizeValue);
             break;
     }
 }
