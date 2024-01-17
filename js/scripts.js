@@ -23,14 +23,21 @@ function setup() {
     video = createCapture(VIDEO);
     //Elijo el tamaño de mi video/webcam a mostrar
     video.size(width, height);
+
+    function modelReady() {
+        console.log('hand pose loaded');
+        alert('cargado el modelo')
+        handpose.on("predict", results => {
+            predictions = results;
+        });
+      }
+
     //Le aplico a mi video, el modelo de inteligencia artificial que detecta mi mano
-    handpose = ml5.handpose(video);
+    handpose = ml5.handpose(video,modelReady);
 
     // Escucho a mi video y modelo, y cuando hay una nueva prediccion
     // Actualizo los puntos del array (Mi mano)
-    handpose.on("predict", results => {
-        predictions = results;
-    });
+
 
     // Oculto el video
     video.hide();
