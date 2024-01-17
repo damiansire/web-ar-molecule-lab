@@ -18,7 +18,27 @@ let figureRotateSlider;
 //Setup, es de processing, se inicia una sola vez
 function setup() {
     //Creo el lienzo/rectangulo donde voy a dibujar
-    createCanvas(640, 480, WEBGL);
+    let canvas = createCanvas(640, 480, WEBGL);
+    canvas.position(0, 0);
+canvas.style('position', 'relative');
+canvas.style('width', '100%');
+canvas.style('height', '100%');
+
+    // Crear un contenedor div y adjuntar el canvas a él
+    let canvasContainer = createDiv();
+    canvasContainer.child(canvas);
+
+    // Establecer el estilo del contenedor para que esté detrás de todo
+    canvasContainer.style('width', '100%');
+    canvasContainer.style('height', '100%');
+
+    /*
+ let contenedorAncho = contenedor.offsetWidth;
+    let contenedorAlto = contenedor.offsetHeight;
+    */
+
+
+
     //Capturo en tiempo real mi webcam
     video = createCapture(VIDEO);
     //Elijo el tamaño de mi video/webcam a mostrar
@@ -26,7 +46,7 @@ function setup() {
 
     function modelReady() {
         console.log('hand pose loaded');
-        alert('cargado el modelo')
+        hideModelLoader()
         handpose.on("predict", results => {
             predictions = results;
         });
@@ -49,6 +69,7 @@ function setup() {
             figureName = event.target.getAttribute("data-id");
         }))
 
+        /*
     //Los sliders
     let acumulateHeight = 100;
     backgroundSliders = createSlidersInProcessing(width + 30, acumulateHeight, 3, "Colores de fondo")
@@ -60,6 +81,7 @@ function setup() {
     acumulateHeight += getSlidersWithTextHeight(1);
     figureRotateSlider = createSliderInProcessing(width + 30, acumulateHeight, "Angular de rotacion", 0, 10, 1);
     acumulateHeight += getSlidersWithTextHeight(1);
+    */
 
 }
 
@@ -98,7 +120,7 @@ function getLastPrediction() {
 }
 
 function drawFigure(x, y, z) {
-    let angleRotation = figureRotateSlider.value() / 10;
+    let angleRotation = figureRotateSlider?.value() / 10 || 0.1;
     //applyBackgroundColor se activa realmente unicamente si quiere color
     applyBackgroundColor()
     translate(x, y, z);
@@ -114,7 +136,7 @@ function drawFigure(x, y, z) {
 
 //Un strategy pattern medio turbio xD
 function drawFigureFunction(figureName) {
-    let sliderSizeValue = figureSizeSlider.value();
+    let sliderSizeValue = figureSizeSlider?.value() || 50;
     switch (figureName) {
         case "None":
             break;
@@ -143,6 +165,7 @@ optionsButton = ["colorButton", "backgroundButton"]
 
 buttonState = optionsButton.map(buttonClass => { buttonClass: false });
 
+/*
 //Agrego los detectores de click a los botoens
 optionsButton.forEach(buttonClass => {
     let button = document.getElementsByClassName(buttonClass)[0];
@@ -150,21 +173,22 @@ optionsButton.forEach(buttonClass => {
         buttonState[buttonClass] = !buttonState[buttonClass];
     })
 })
+*/
 
 function applyBackgroundColor() {
     if (buttonState["backgroundButton"]) {
-        const r = backgroundSliders[0].value();
-        const g = backgroundSliders[1].value();
-        const b = backgroundSliders[2].value();
+        const r = backgroundSliders[0]?.value() || 0;
+        const g = backgroundSliders[1]?.value() || 0;
+        const b = backgroundSliders[2]?.value() || 0;
         background(r, g, b);
     }
 }
 
 function applyBackgroundColorToFigure() {
     if (buttonState["colorButton"]) {
-        const r = figureColorSliders[0].value();
-        const g = figureColorSliders[1].value();
-        const b = figureColorSliders[2].value();
+        const r = figureColorSliders[0]?.value() || 0;
+        const g = figureColorSliders[1]?.value() || 0;
+        const b = figureColorSliders[2]?.value() || 0;
         fill(r, g, b);
     }
 }
@@ -211,4 +235,17 @@ function createSliderInProcessing(positionX, positionY, sliderText, fromValue, t
 //Obtener cuanto ocupan x cantidad de sliders con texto (en px)
 function getSlidersWithTextHeight(slidersAmount) {
     return 20 + 30 * slidersAmount;
+}
+
+
+//UI functions
+
+const loadingModelContainer = document.getElementById('loading-model-message-container');
+
+function showModelLoader() {
+    loadingModelContainer.style.visibility = 'visible';
+}
+
+function hideModelLoader() {
+    loadingModelContainer.style.display = 'none';
 }
