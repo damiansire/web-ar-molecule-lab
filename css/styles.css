@@ -45,3 +45,8 @@ body{
     vertical-align: middle;
     cursor: pointer;
 }
+.canvas-container{
+position:  relative;
+width:  100%;
+height:  100%;
+}

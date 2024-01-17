@@ -17,22 +17,15 @@ let figureRotateSlider;
 
 //Setup, es de processing, se inicia una sola vez
 function setup() {
+
+    const canvasContainer = document.getElementsByClassName('canvas-container')[0]
     //Creo el lienzo/rectangulo donde voy a dibujar
     let canvas = createCanvas(640, 400, WEBGL);
     canvas.position(0, 0);
-canvas.style('position', 'absolute');
-canvas.style('width', '100%');
-canvas.style('height', '100%');
-
-    // Crear un contenedor div y adjuntar el canvas a él
-    let canvasContainer = createDiv();
-    canvasContainer.child(canvas);
-
-    // Establecer el estilo del contenedor para que esté detrás de todo
-    canvasContainer.style('position', 'relative');
-    canvasContainer.style('width', '100%');
-    canvasContainer.style('height', '100%');
-
+    canvas.style('position', 'absolute');
+    canvas.style('width', '100%');
+    canvas.style('height', '100%');
+    canvas.parent(canvasContainer);
     /*
  let contenedorAncho = contenedor.offsetWidth;
     let contenedorAlto = contenedor.offsetHeight;
