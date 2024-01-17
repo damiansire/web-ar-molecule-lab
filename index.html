@@ -21,25 +21,33 @@
 </head>
 
 <body>
-
-    <div class="principalButtonContainer">
-        <button class="figureButton" data-id="None">Nada</button>
-        <button class="figureButton" data-id="Cuadrado">Cuadrado</button>
-        <button class="figureButton" data-id="Cubo">Cubo</button>
-        <button class="figureButton" data-id="Cilindro">Cilindro</button>
-        <button class="figureButton" data-id="Cono">Cono</button>
-        <button class="figureButton" data-id="Toro">Toro</button>
-        <button class="figureButton" data-id="Esfera">Esfera</button>
-    </div>
-    <div>
+    <section id="loading-model-message-container" style="position: absolute;">
+        <div>
+            <span>Loading the Artificial Intelligence model...</span>
+        </div>
+        <div>
+            <span>Please wait...</span>
+        </div>
+    </section>
+    <section>
+        <div class="principal-button-container">
+            <button class="figureButton" data-id="None">Nada</button>
+            <button class="figureButton" data-id="Cuadrado">Cuadrado</button>
+            <button class="figureButton" data-id="Cubo">Cubo</button>
+            <button class="figureButton" data-id="Cilindro">Cilindro</button>
+            <button class="figureButton" data-id="Cono">Cono</button>
+            <button class="figureButton" data-id="Toro">Toro</button>
+            <button class="figureButton" data-id="Esfera">Esfera</button>
+        </div>
+    </section>
+    <!-- 
+    <section>
         <button class="colorButton optionButton">Color</button>
         <button class="backgroundButton optionButton">Background</button>
-    </div>
-    <!-- Importo processing-->
+    </section>
+    -->
     <script src="./libs/p5.min.js"></script>
-    <!-- Importo ml5, la libreria con los modelos de machine learning-->
     <script src="./libs/ml5.v0.12.2.min.js"></script>
-    <!-- Importo mi script-->
     <script src="js/scripts.js"></script>
 </body>
 
