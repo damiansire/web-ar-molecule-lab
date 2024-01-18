@@ -1,17 +1,19 @@
-body, html {
+body,
+html {
     margin: 0;
     padding: 0;
 }
 
-html{
-height: 100%;
+html {
+    height: 100%;
 }
 
-body{
+body {
     height: 100%;
     display: flex;
 }
-.principal-button-container{
+
+.principal-button-container {
     display: flex;
     flex-direction: column;
 }
@@ -45,8 +47,9 @@ body{
     vertical-align: middle;
     cursor: pointer;
 }
-.canvas-container{
-position:  relative;
-width:  100%;
-height:  100%;
+
+.canvas-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
 }
