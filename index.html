@@ -23,41 +23,31 @@
 
 <body>
 
-    <camera-permissions></camera-permissions>
+    <script src="./libs/p5.min.js"></script>
+    <script src="./libs/ml5.min.js"></script>
 
+    <!-- 
+    <camera-permissions></camera-permissions>
 
     <loading-model-screen></loading-model-screen>
 
-    <script>
-        const loadingMessage = document.querySelector('loading-model-screen');
+    <figure-selector></figure-selector>
 
-        // Show the message:
-        loadingMessage.show();
-
-        // Simulate some loading...
-        setTimeout(() => {
-            loadingMessage.hide();
-        }, 3000); // Hide after 3 seconds
-    </script>
-
-    <section>
-        <figure-buttons></figure-buttons>
-    </section>
     <section class="canvas-container">
 
     </section>
-    <!-- 
+
     <section>
         <button class="colorButton optionButton">Color</button>
         <button class="backgroundButton optionButton">Background</button>
     </section>
-    -->
+  
     <script src="components/camera-permissions.js"></script>
     <script src="components/figure-selector.js"></script>
     <script src="components/loading-model-screen.js"></script>
-    <script src="../libs/p5.min.js"></script>
-    <script src="../libs/ml5.v0.12.2.min.js"></script>
-    <script src="../js/scripts.js"></script>
+
+    <script src="./js/scripts.js"></script>
+    -->
 </body>
 
 </html>

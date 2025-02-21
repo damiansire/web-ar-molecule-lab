@@ -1,4 +1,4 @@
-class FigureButtons extends HTMLElement {
+class FigureSelector extends HTMLElement {
   constructor() {
     super();
 
@@ -61,4 +61,4 @@ class FigureButtons extends HTMLElement {
   }
 }
 
-customElements.define("figure-buttons", FigureButtons);
+customElements.define("figure-selector", FigureSelector);
