@@ -128,22 +128,16 @@ function drawFigureFunction(figureName) {
       break;
     case "Cuadrado":
       return plane(sliderSizeValue);
-      break;
     case "Cubo":
       return box(sliderSizeValue, sliderSizeValue, sliderSizeValue);
-      break;
     case "Cilindro":
       return cylinder(sliderSizeValue, sliderSizeValue);
-      break;
     case "Cono":
       return cone(sliderSizeValue, sliderSizeValue);
-      break;
     case "Toro":
       return torus(sliderSizeValue, 20);
-      break;
     case "Esfera":
       return sphere(sliderSizeValue);
-      break;
   }
 }
 
