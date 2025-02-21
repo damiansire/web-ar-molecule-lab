@@ -152,6 +152,7 @@
             if (state === 'granted') {
                 permissionButton.textContent = 'Permission Granted';
                 permissionButton.disabled = true;
+                window.location.href = "/pages/model.html";
             } else {
                 permissionButton.textContent = 'Request Camera Permission';
                 permissionButton.disabled = false;
