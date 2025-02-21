@@ -2,15 +2,56 @@
 <html lang="en">
 
 <head>
+    <!-- Global site tag (gtag.js) - Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-ELNQT5K3ND"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        window.dataLayer = window.dataLayer || [];
+
+        function gtag() {
+            dataLayer.push(arguments);
+        }
+        gtag('js', new Date());
+
+        gtag('config', 'G-ELNQT5K3ND');
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>IA for all</title>
+    <link rel="stylesheet" href="../css/styles.css">
 </head>
 
 <body>
+
     <camera-permissions></camera-permissions>
+
+
+
+    <section id="loading-model-message-container" style="position: absolute;">
+        <div>
+            <span>Loading the Artificial Intelligence model...</span>
+        </div>
+        <div>
+            <span>Please wait...</span>
+        </div>
+    </section>
+    <section>
+        <figure-buttons></figure-buttons>
+    </section>
+    <section class="canvas-container">
+
+    </section>
+    <!-- 
+    <section>
+        <button class="colorButton optionButton">Color</button>
+        <button class="backgroundButton optionButton">Background</button>
+    </section>
+    -->
     <script src="components/camera-permissions.js"></script>
+    <script src="components/figure-selector.js"></script>
+    <script src="../libs/p5.min.js"></script>
+    <script src="../libs/ml5.v0.12.2.min.js"></script>
+    <script src="../js/scripts.js"></script>
 </body>
 
 </html>
