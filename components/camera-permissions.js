@@ -163,12 +163,16 @@ class CameraPermissions extends HTMLElement {
       if (state === "granted") {
         permissionButton.textContent = "Permission Granted";
         permissionButton.disabled = true;
-        // Redirección (usando el método del componente)
-        this.redirectToModelPage();
       } else {
         permissionButton.textContent = "Request Camera Permission";
         permissionButton.disabled = false;
       }
+
+      this.dispatchEvent(
+        new CustomEvent("cameraPermissionChanged", {
+          detail: { state: state },
+        })
+      );
     };
 
     this.checkPermission = () => {
@@ -194,10 +198,6 @@ class CameraPermissions extends HTMLElement {
     permissionButton.addEventListener("click", this.requestPermission.bind(this)); // bind para el contexto
 
     this.checkPermission();
-  }
-
-  redirectToModelPage() {
-    window.location.href = "/pages/model.html";
   }
 }
 
