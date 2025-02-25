@@ -1,4 +1,5 @@
-// camera-permissions.js
+import { EVENT_TYPES } from "../utils/constants.js";
+
 class CameraPermissions extends HTMLElement {
   constructor() {
     super();
@@ -169,14 +170,20 @@ class CameraPermissions extends HTMLElement {
       }
 
       this.dispatchEvent(
-        new CustomEvent("cameraPermissionChanged", {
-          detail: { state: state },
+        new CustomEvent("appStateChanged", {
+          detail: {
+            eventType: EVENT_TYPES.CAMERA_PERMISSIONS_GRANTED,
+            permissionState: EVENT_TYPES.CAMERA_PERMISSIONS_GRANTED,
+          },
         })
       );
+      console.log("Se emitio un nuevo estado de cameraPermissionsGranted, con:", state);
     };
 
     this.checkPermission = () => {
+      console.log("Revisando permisos de la camera");
       navigator.permissions.query({ name: "camera" }).then((result) => {
+        console.log("el permiso: ", result.state);
         this.updateButtonState(result.state);
         result.onchange = () => this.updateButtonState(result.state);
       });
