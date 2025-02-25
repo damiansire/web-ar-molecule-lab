@@ -1,71 +1,87 @@
-import { EVENT_TYPES, PAGE_STATES } from "./utils/constants.js";
+import { loadScript } from "./utils/load.js";
+import { EVENT_TYPES, MODELS, PAGES } from "./utils/constants.js";
+
 import "./components/camera-permissions.js"; // Importa los web components
 import "./components/loading-model-screen.js";
 import "./components/figure-selector.js";
 
+loadScript("./vendor/p5.min.js");
+loadScript("./vendor/ml5.min.js");
+
 const app = document.getElementById("app");
-let ml5Cargado = false;
 
-function cargarScript(url) {
-  return new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = url;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Error al cargar ${url}`));
-    document.head.appendChild(script);
-  });
-}
+const scriptState = {
+  state: {
+    "p5.min.js": false,
+    "ml5.min.js": false,
+  },
+  get isAllLoaded() {
+    return Object.values(this.state).every((value) => value === true);
+  },
+  updateState: function (scriptName) {
+    this.state[scriptName] = true;
+    if (this.isAllLoaded()) {
+      const event = new CustomEvent("appStateChanged", {
+        detail: {
+          eventType: EVENT_TYPES.CURRENT_PAGE_CHANGED,
+          newPage: PAGES.HANDPOSE_MODEL,
+        },
+      });
+      document.dispatchEvent(event);
+    }
+  },
+};
 
-const self = this; // Guardar el contexto
+document.addEventListener("scriptLoaded", (event) => {
+  const { scriptName } = event.detail;
+  scriptState.updateState(scriptName);
+});
 
-function manejarPermisosCamara(permissionState) {
-  if (ml5Cargado) {
-    mostrarFigureSelector();
-  } else {
-    mostrarLoadingModelScreen();
-    cargarMl5();
+const appState = {
+  state: {
+    currentPage: PAGES.CAMERA_PERMISSIONS,
+    selectedModel: MODELS.HANDPOSE,
+  },
+  handleAppStateChanged(event) {
+    const { eventType, detail } = event.detail;
+    switch (eventType) {
+      case EVENT_TYPES.CAMERA_PERMISSIONS:
+        handleEventCameraPermissions(detail);
+        break;
+      default:
+        break;
+    }
+    renderApp();
+  },
+  handleEventCameraPermissions(detail) {
+    if (detail.allowCamera) {
+      this.state.currentPage = PAGES.LOADING;
+      //TODO:PERFORMANCE: IF THE MODEL IS ALREADY LOADED, SKIP THE LOADING SCREEN
+    }
+  },
+  get currentPage() {
+    return this.state.currentPage;
+  },
+};
+
+document.addEventListener("appStateChanged", appState.handleAppStateChanged, {
+  capture: true,
+});
+
+function renderApp() {
+  debugger;
+  switch (appState.currentPage) {
+    case PAGES.CAMERA_PERMISSIONS:
+      app.innerHTML = "<camera-permissions></camera-permissions>";
+      break;
+
+    case PAGES.LOADING_MODEL:
+      app.innerHTML = "<loading-model-screen></loading-model-screen>";
+      break;
+
+    default:
+      break;
   }
 }
 
-function cargarMl5() {
-  cargarScript("./libs/ml5.min.js")
-    .then(() => {
-      ml5Cargado = true;
-      mostrarFigureSelector();
-    })
-    .catch((error) => {
-      console.error("Error al cargar ml5:", error);
-      // Manejar el error adecuadamente
-    });
-}
-
-function mostrarLoadingModelScreen() {
-  app.innerHTML = "<loading-model-screen></loading-model-screen>";
-  currentPage = PAGE_STATES.LOADING_MODEL; // Actualiza el estado de la página
-}
-
-function mostrarFigureSelector() {
-  app.innerHTML = "<figure-selector></figure-selector>";
-  currentPage = PAGE_STATES.FIGURE_SELECTOR; // Actualiza el estado de la página
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  const appElement = document.querySelector("camera-permissions");
-  console.log("encontrado el webcomponente");
-  document.addEventListener(
-    "appStateChanged",
-    (event) => {
-      const detail = event.detail;
-      console.log(
-        "Evento appStateChanged recibido (delegado) en index.html app.js:",
-        detail
-      );
-
-      if (detail.eventType === "CAMERA_PERMISSIONS_GRANTED") {
-        console.log("Permisos de cámara concedidos (delegado).");
-        // Aquí puedes realizar las acciones necesarias.
-      }
-    },
-    { capture: true }
-  );
-});
+renderApp();

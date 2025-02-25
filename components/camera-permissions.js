@@ -160,24 +160,26 @@ class CameraPermissions extends HTMLElement {
     const permissionButton = this.shadowRoot.getElementById("permissionButton");
 
     this.updateButtonState = (state) => {
-      // Función flecha para mantener el contexto de 'this'
-      if (state === "granted") {
-        permissionButton.textContent = "Permission Granted";
-        permissionButton.disabled = true;
-      } else {
-        permissionButton.textContent = "Request Camera Permission";
-        permissionButton.disabled = false;
-      }
+      allowCamera = state === "granted";
+      permissionButton.textContent = allowCamera
+        ? "Permission Granted"
+        : "Request Camera Permission";
+      permissionButton.disabled = allowCamera;
 
-      this.dispatchEvent(
-        new CustomEvent("appStateChanged", {
-          detail: {
-            eventType: EVENT_TYPES.CAMERA_PERMISSIONS_GRANTED,
-            permissionState: EVENT_TYPES.CAMERA_PERMISSIONS_GRANTED,
-          },
-        })
+      const event = new CustomEvent(EVENT_TYPES.APP_STATE_CHANGED, {
+        detail: {
+          eventType: EVENT_TYPES.CAMERA_PERMISSIONS,
+          allowCamera: allowCamera,
+        },
+      });
+      this.dispatchEvent(event);
+
+      console.log(
+        "Se emitio un nuevo estado de",
+        EVENT_TYPES.CAMERA_PERMISSIONS,
+        ", con:",
+        state
       );
-      console.log("Se emitio un nuevo estado de cameraPermissionsGranted, con:", state);
     };
 
     this.checkPermission = () => {
