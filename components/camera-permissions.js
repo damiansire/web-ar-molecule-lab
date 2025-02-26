@@ -160,7 +160,8 @@ class CameraPermissions extends HTMLElement {
     const permissionButton = this.shadowRoot.getElementById("permissionButton");
 
     this.updateButtonState = (state) => {
-      allowCamera = state === "granted";
+      debugger;
+      const allowCamera = state === "granted";
       permissionButton.textContent = allowCamera
         ? "Permission Granted"
         : "Request Camera Permission";
@@ -183,10 +184,8 @@ class CameraPermissions extends HTMLElement {
     };
 
     this.checkPermission = () => {
-      console.log("Revisando permisos de la camera");
       navigator.permissions.query({ name: "camera" }).then((result) => {
         console.log("el permiso: ", result.state);
-        this.updateButtonState(result.state);
         result.onchange = () => this.updateButtonState(result.state);
       });
     };

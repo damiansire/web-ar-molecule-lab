@@ -20,7 +20,7 @@ const scriptState = {
   },
   updateState: function (scriptName) {
     this.state[scriptName] = true;
-    if (this.isAllLoaded()) {
+    if (this.isAllLoaded) {
       const event = new CustomEvent("appStateChanged", {
         detail: {
           eventType: EVENT_TYPES.CURRENT_PAGE_CHANGED,
@@ -42,18 +42,17 @@ const appState = {
     currentPage: PAGES.CAMERA_PERMISSIONS,
     selectedModel: MODELS.HANDPOSE,
   },
-  handleAppStateChanged(event) {
-    const { eventType, detail } = event.detail;
-    switch (eventType) {
+  handleAppStateChanged: function (event) {
+    switch (event.detail.eventType) {
       case EVENT_TYPES.CAMERA_PERMISSIONS:
-        handleEventCameraPermissions(detail);
+        this.handleEventCameraPermissions(event.detail);
         break;
       default:
         break;
     }
     renderApp();
   },
-  handleEventCameraPermissions(detail) {
+  handleEventCameraPermissions: function (detail) {
     if (detail.allowCamera) {
       this.state.currentPage = PAGES.LOADING;
       //TODO:PERFORMANCE: IF THE MODEL IS ALREADY LOADED, SKIP THE LOADING SCREEN
@@ -64,12 +63,17 @@ const appState = {
   },
 };
 
-document.addEventListener("appStateChanged", appState.handleAppStateChanged, {
-  capture: true,
-});
+document.addEventListener(
+  "appStateChanged",
+  (event) => {
+    appState.handleAppStateChanged(event);
+  },
+  {
+    capture: true,
+  }
+);
 
 function renderApp() {
-  debugger;
   switch (appState.currentPage) {
     case PAGES.CAMERA_PERMISSIONS:
       app.innerHTML = "<camera-permissions></camera-permissions>";
