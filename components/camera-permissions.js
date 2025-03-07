@@ -160,7 +160,7 @@ class CameraPermissions extends HTMLElement {
     const permissionButton = this.shadowRoot.getElementById("permissionButton");
 
     this.updateButtonState = (state) => {
-      debugger;
+      //Todo: when the camera permission is blocked
       const allowCamera = state === "granted";
       permissionButton.textContent = allowCamera
         ? "Permission Granted"
@@ -169,23 +169,16 @@ class CameraPermissions extends HTMLElement {
 
       const event = new CustomEvent(EVENT_TYPES.APP_STATE_CHANGED, {
         detail: {
-          eventType: EVENT_TYPES.CAMERA_PERMISSIONS,
+          type: EVENT_TYPES.CAMERA_PERMISSIONS,
           allowCamera: allowCamera,
         },
       });
       this.dispatchEvent(event);
-
-      console.log(
-        "Se emitio un nuevo estado de",
-        EVENT_TYPES.CAMERA_PERMISSIONS,
-        ", con:",
-        state
-      );
     };
 
     this.checkPermission = () => {
       navigator.permissions.query({ name: "camera" }).then((result) => {
-        console.log("el permiso: ", result.state);
+        //Todo: when the camera permission is blocked
         result.onchange = () => this.updateButtonState(result.state);
       });
     };

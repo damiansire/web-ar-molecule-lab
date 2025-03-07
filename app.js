@@ -1,7 +1,7 @@
 import { loadScript } from "./utils/load.js";
 import { EVENT_TYPES, MODELS, PAGES } from "./utils/constants.js";
 
-import "./components/camera-permissions.js"; // Importa los web components
+import "./components/camera-permissions.js";
 import "./components/loading-model-screen.js";
 import "./components/figure-selector.js";
 
@@ -10,56 +10,68 @@ loadScript("./vendor/ml5.min.js");
 
 const app = document.getElementById("app");
 
-const scriptState = {
-  state: {
-    "p5.min.js": false,
-    "ml5.min.js": false,
-  },
-  get isAllLoaded() {
-    return Object.values(this.state).every((value) => value === true);
-  },
-  updateState: function (scriptName) {
-    this.state[scriptName] = true;
-    if (this.isAllLoaded) {
-      const event = new CustomEvent("appStateChanged", {
-        detail: {
-          eventType: EVENT_TYPES.CURRENT_PAGE_CHANGED,
-          newPage: PAGES.HANDPOSE_MODEL,
-        },
-      });
-      document.dispatchEvent(event);
-    }
-  },
-};
-
-document.addEventListener("scriptLoaded", (event) => {
-  const { scriptName } = event.detail;
-  scriptState.updateState(scriptName);
-});
-
 const appState = {
   state: {
     currentPage: PAGES.CAMERA_PERMISSIONS,
     selectedModel: MODELS.HANDPOSE,
+    allowCamera: false,
+    scriptsLoaded: {
+      "p5.min.js": false,
+      "ml5.min.js": false,
+    },
+    allScriptsLoaded: function () {
+      return Object.values(this.scriptsLoaded).every((value) => value === true);
+    },
   },
+
   handleAppStateChanged: function (event) {
-    switch (event.detail.eventType) {
+    switch (event.detail.type) {
       case EVENT_TYPES.CAMERA_PERMISSIONS:
         this.handleEventCameraPermissions(event.detail);
+        break;
+      case EVENT_TYPES.SCRIPT_LOADED:
+        this.handleScriptLoaded(event.detail.scriptName);
         break;
       default:
         break;
     }
+    this.nextRoute();
     renderApp();
   },
+
   handleEventCameraPermissions: function (detail) {
-    if (detail.allowCamera) {
-      this.state.currentPage = PAGES.LOADING;
-      //TODO:PERFORMANCE: IF THE MODEL IS ALREADY LOADED, SKIP THE LOADING SCREEN
-    }
+    this.state.allowCamera = detail.allowCamera;
   },
-  get currentPage() {
-    return this.state.currentPage;
+
+  handleScriptLoaded: function (scriptName) {
+    this.state.scriptsLoaded[scriptName] = true;
+  },
+
+  nextRoute: function () {
+    const { currentPage } = this.state;
+
+    switch (currentPage) {
+      case PAGES.CAMERA_PERMISSIONS:
+        if (this.state.allowCamera) {
+          if (this.state.allScriptsLoaded()) {
+            this.state.currentPage = PAGES.HANDPOSE_MODEL;
+          } else {
+            this.state.currentPage = PAGES.LOADING;
+          }
+        }
+        break;
+
+      case PAGES.LOADING:
+        if (this.state.allScriptsLoaded()) {
+          this.state.currentPage = PAGES.HANDPOSE_MODEL;
+        }
+        break;
+
+      case PAGES.HANDPOSE_MODEL:
+
+      default:
+        break;
+    }
   },
 };
 
@@ -73,14 +85,28 @@ document.addEventListener(
   }
 );
 
+document.addEventListener(
+  "scriptLoaded",
+  (event) => {
+    appState.handleAppStateChanged({
+      detail: { type: EVENT_TYPES.SCRIPT_LOADED, scriptName: event.detail.scriptName },
+    });
+  },
+  { capture: true }
+);
+
 function renderApp() {
-  switch (appState.currentPage) {
+  switch (appState.state.currentPage) {
     case PAGES.CAMERA_PERMISSIONS:
       app.innerHTML = "<camera-permissions></camera-permissions>";
       break;
 
-    case PAGES.LOADING_MODEL:
+    case PAGES.LOADING:
       app.innerHTML = "<loading-model-screen></loading-model-screen>";
+      break;
+
+    case PAGES.HANDPOSE_MODEL:
+      app.innerHTML = "hola";
       break;
 
     default:
