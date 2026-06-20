@@ -7,9 +7,18 @@ export interface ControlsState {
   size: number;
   speed: number;
   color: string;
+  /** Si está activo, reemplaza el video de la cámara por un color sólido. */
+  bgEnabled: boolean;
+  bgColor: string;
 }
 
-const DEFAULTS: ControlsState = { size: 1, speed: 1, color: "#f45e61" };
+const DEFAULTS: ControlsState = {
+  size: 1,
+  speed: 1,
+  color: "#f45e61",
+  bgEnabled: false,
+  bgColor: "#101826",
+};
 
 export class ARControls extends HTMLElement {
   private state: ControlsState = { ...DEFAULTS };
@@ -39,6 +48,9 @@ export class ARControls extends HTMLElement {
           width: 2.4rem; height: 1.6rem; padding: 0; border: none;
           background: none; cursor: pointer; border-radius: 0.3rem;
         }
+        .sep { height: 1px; background: rgba(255,255,255,0.12); margin: 0.1rem 0; }
+        .toggle { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; }
+        input[type="checkbox"] { accent-color: #f45e61; width: 1rem; height: 1rem; cursor: pointer; }
       </style>
       <div class="panel">
         <div class="row">
@@ -50,8 +62,13 @@ export class ARControls extends HTMLElement {
           <input type="range" id="speed" min="0" max="3" step="0.1" />
         </div>
         <div class="row color-row">
-          <label>Color</label>
+          <label>Color figura</label>
           <input type="color" id="color" />
+        </div>
+        <div class="sep"></div>
+        <div class="row color-row">
+          <label class="toggle"><input type="checkbox" id="bg-enabled" /> Fondo de color</label>
+          <input type="color" id="bg-color" />
         </div>
       </div>
     `;
@@ -59,9 +76,13 @@ export class ARControls extends HTMLElement {
     const size = shadow.getElementById("size") as HTMLInputElement;
     const speed = shadow.getElementById("speed") as HTMLInputElement;
     const color = shadow.getElementById("color") as HTMLInputElement;
+    const bgEnabled = shadow.getElementById("bg-enabled") as HTMLInputElement;
+    const bgColor = shadow.getElementById("bg-color") as HTMLInputElement;
     size.value = String(this.state.size);
     speed.value = String(this.state.speed);
     color.value = this.state.color;
+    bgEnabled.checked = this.state.bgEnabled;
+    bgColor.value = this.state.bgColor;
 
     const sizeVal = shadow.getElementById("size-val")!;
     const speedVal = shadow.getElementById("speed-val")!;
@@ -83,6 +104,14 @@ export class ARControls extends HTMLElement {
     });
     color.addEventListener("input", () => {
       this.state.color = color.value;
+      this.emit();
+    });
+    bgEnabled.addEventListener("change", () => {
+      this.state.bgEnabled = bgEnabled.checked;
+      this.emit();
+    });
+    bgColor.addEventListener("input", () => {
+      this.state.bgColor = bgColor.value;
       this.emit();
     });
   }
