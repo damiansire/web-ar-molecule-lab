@@ -9,6 +9,12 @@
 const TASKS_VISION_VERSION = "0.10.35";
 
 export const MEDIAPIPE = {
+  /**
+   * Bundle CJS de MediaPipe que el worker carga con `importScripts`. Se usa un
+   * worker clásico (no módulo) porque MediaPipe necesita `importScripts`, que no
+   * existe en un worker de tipo módulo.
+   */
+  bundle: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/vision_bundle.cjs`,
   /** Fileset WASM (SIMD / no-SIMD) que resuelve MediaPipe en runtime. */
   wasmBase: `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${TASKS_VISION_VERSION}/wasm`,
   /** Modelo de detección de manos (float16, 1 mano). */
