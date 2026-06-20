@@ -23,6 +23,7 @@ interface InitRequest {
   bundleUrl: string;
   wasmBase: string;
   modelUrl: string;
+  forceCpu: boolean;
 }
 interface FrameRequest {
   type: "frame";
@@ -61,22 +62,33 @@ async function loadMediaPipe(bundleUrl: string): Promise<any> {
   return g.module.exports;
 }
 
+/** ¿Hay WebGL2 vía OffscreenCanvas en este worker? (requisito del delegate GPU). */
+function gpuAvailable(): boolean {
+  try {
+    return !!new OffscreenCanvas(1, 1).getContext("webgl2");
+  } catch {
+    return false;
+  }
+}
+
 async function init(
   bundleUrl: string,
   wasmBase: string,
   modelUrl: string,
+  forceCpu: boolean,
 ): Promise<void> {
   const mp = await loadMediaPipe(bundleUrl);
   const fileset = await mp.FilesetResolver.forVisionTasks(wasmBase);
-  // Delegate CPU (WASM SIMD): dentro de un worker el delegate GPU requiere
-  // OffscreenCanvas/WebGL y en varios navegadores cuelga el hilo del worker.
-  // CPU es portable y corre fuera del hilo principal. Para una mano rinde bien.
+  // GPU es mucho más rápido, pero en algunos navegadores el delegate GPU dentro
+  // de un worker cuelga el hilo. Probamos WebGL2 y, si el hilo principal pide
+  // forceCpu (porque un intento previo no respondió a tiempo), usamos CPU.
+  const delegate = !forceCpu && gpuAvailable() ? "GPU" : "CPU";
   landmarker = await mp.HandLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: modelUrl, delegate: "CPU" },
+    baseOptions: { modelAssetPath: modelUrl, delegate },
     runningMode: "VIDEO",
     numHands: 2,
   });
-  post({ type: "ready" });
+  post({ type: "ready", delegate });
 }
 
 function detect(bitmap: ImageBitmap, timestamp: number): void {
@@ -97,7 +109,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   switch (msg.type) {
     case "init":
-      init(msg.bundleUrl, msg.wasmBase, msg.modelUrl).catch((err: unknown) => {
+      init(msg.bundleUrl, msg.wasmBase, msg.modelUrl, msg.forceCpu).catch((err: unknown) => {
         post({
           type: "init-error",
           message: err instanceof Error ? err.message : String(err),

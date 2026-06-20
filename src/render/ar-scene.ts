@@ -59,6 +59,11 @@ interface FigureInstance {
   mesh: Mesh;
   edges: LineSegments; // hijo del mesh (hereda transform y visibilidad)
   shadow: Mesh; // suelto en la escena (no rota con la figura)
+  // Estado de suavizado: posición/escala actuales que persiguen al objetivo.
+  x: number;
+  y: number;
+  s: number;
+  primed: boolean; // true una vez que tiene una posición real (para no interpolar desde 0,0)
 }
 
 export class ARScene {
@@ -120,7 +125,7 @@ export class ARScene {
       const shadow = new Mesh(this.shadowGeo, this.shadowMaterial);
       shadow.visible = false;
       this.scene.add(mesh, shadow);
-      this.instances.push({ mesh, edges, shadow });
+      this.instances.push({ mesh, edges, shadow, x: 0, y: 0, s: 1, primed: false });
     }
 
     this.resize();
@@ -252,6 +257,11 @@ export class ARScene {
     this.spin += dt * this.rotationSpeed;
     const maxFigures = this.multiHand ? MAX_FIGURES : 1;
 
+    // Suavizado exponencial independiente del framerate: la figura "persigue"
+    // el objetivo en vez de saltar, así se ve fluida aunque la inferencia
+    // llegue a 15-25 fps (la cámara/render van a 60).
+    const smooth = 1 - Math.exp(-dt * 18);
+
     for (let i = 0; i < this.instances.length; i++) {
       const inst = this.instances[i];
       const anchor =
@@ -262,13 +272,26 @@ export class ARScene {
 
       if (visible && anchor) {
         const p = landmarkToScreen(anchor, w, h, this.mirrored);
-        const s = depthToScale(p.z) * this.sizeScale;
-        inst.mesh.position.set(p.x, p.y, 0);
-        inst.mesh.scale.setScalar(s);
+        const targetS = depthToScale(p.z) * this.sizeScale;
+        if (!inst.primed) {
+          // Primera detección: arrancamos en el objetivo (sin deslizar desde 0,0).
+          inst.x = p.x;
+          inst.y = p.y;
+          inst.s = targetS;
+          inst.primed = true;
+        } else {
+          inst.x += (p.x - inst.x) * smooth;
+          inst.y += (p.y - inst.y) * smooth;
+          inst.s += (targetS - inst.s) * smooth;
+        }
+        inst.mesh.position.set(inst.x, inst.y, 0);
+        inst.mesh.scale.setScalar(inst.s);
         inst.mesh.rotation.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
         // Sombra: elipse plana debajo de la figura, sin rotar.
-        inst.shadow.position.set(p.x, p.y + BASE * 0.55 * s, -2);
-        inst.shadow.scale.set(s, s * 0.4, s);
+        inst.shadow.position.set(inst.x, inst.y + BASE * 0.55 * inst.s, -2);
+        inst.shadow.scale.set(inst.s, inst.s * 0.4, inst.s);
+      } else {
+        inst.primed = false; // al reaparecer, vuelve a arrancar en el objetivo
       }
     }
 
