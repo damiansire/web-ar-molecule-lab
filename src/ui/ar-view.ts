@@ -3,15 +3,18 @@
  * (espejado), el <canvas> de Three.js encima y el selector de figuras.
  */
 import { FigureSelector } from "./figure-selector";
+import { ARControls } from "./ar-controls";
 
-// Asegura que el custom element esté registrado aunque se haga tree-shaking.
+// Asegura que los custom elements queden registrados aunque haya tree-shaking.
 void FigureSelector;
+void ARControls;
 
 export interface ARView {
   root: HTMLElement;
   video: HTMLVideoElement;
   canvas: HTMLCanvasElement;
   selector: FigureSelector;
+  controls: ARControls;
 }
 
 export function arView(): ARView {
@@ -30,6 +33,9 @@ export function arView(): ARView {
   const selector = document.createElement("figure-selector") as FigureSelector;
   selector.className = "ar-selector";
 
-  root.append(video, canvas, selector);
-  return { root, video, canvas, selector };
+  const controls = document.createElement("ar-controls") as ARControls;
+  controls.className = "ar-controls-panel";
+
+  root.append(video, canvas, controls, selector);
+  return { root, video, canvas, selector, controls };
 }

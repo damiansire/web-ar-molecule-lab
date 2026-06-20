@@ -133,3 +133,10 @@ button.primary:disabled {
   bottom: max(1rem, env(safe-area-inset-bottom));
   z-index: 2;
 }
+
+.ar-controls-panel {
+  position: absolute;
+  top: max(1rem, env(safe-area-inset-top));
+  left: 1rem;
+  z-index: 3;
+}

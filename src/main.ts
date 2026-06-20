@@ -18,6 +18,7 @@ import { HandTracker } from "./inference/hand-tracker";
 import type { ARScene } from "./render/ar-scene";
 import { permissionScreen, loadingScreen, errorScreen } from "./ui/screens";
 import { arView } from "./ui/ar-view";
+import type { ControlsState } from "./ui/ar-controls";
 
 const appEl = document.getElementById("app")!;
 
@@ -115,6 +116,13 @@ async function renderAR(): Promise<void> {
 
   view.selector.addEventListener("figure-change", (e) => {
     scene?.setFigure((e as CustomEvent<FigureKind>).detail);
+  });
+
+  view.controls.addEventListener("controls-change", (e) => {
+    const { size, speed, color } = (e as CustomEvent<ControlsState>).detail;
+    scene?.setSize(size);
+    scene?.setSpeed(speed);
+    scene?.setColor(color);
   });
 
   const onResize = () => scene?.resize();

@@ -1,0 +1,97 @@
+/**
+ * Componente `<ar-controls>`: panel de ajustes de la figura (tamaño, velocidad
+ * de giro y color). Recupera los sliders que tenía la versión original.
+ * Emite `controls-change` con `{ size, speed, color }` en cada cambio.
+ */
+export interface ControlsState {
+  size: number;
+  speed: number;
+  color: string;
+}
+
+const DEFAULTS: ControlsState = { size: 1, speed: 1, color: "#f45e61" };
+
+export class ARControls extends HTMLElement {
+  private state: ControlsState = { ...DEFAULTS };
+
+  connectedCallback(): void {
+    const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>
+        :host { display: block; }
+        .panel {
+          display: flex; flex-direction: column; gap: 0.6rem;
+          padding: 0.85rem 1rem;
+          background: rgba(17, 24, 39, 0.55);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 0.8rem;
+          backdrop-filter: blur(8px);
+          color: #f9fafb;
+          font: 600 0.8rem/1.2 system-ui, sans-serif;
+          width: 12.5rem; max-width: 70vw;
+        }
+        .row { display: flex; flex-direction: column; gap: 0.3rem; }
+        .row label { display: flex; justify-content: space-between; opacity: 0.9; }
+        .val { color: #f45e61; font-variant-numeric: tabular-nums; }
+        input[type="range"] { width: 100%; accent-color: #f45e61; cursor: pointer; }
+        .color-row { flex-direction: row; align-items: center; justify-content: space-between; }
+        input[type="color"] {
+          width: 2.4rem; height: 1.6rem; padding: 0; border: none;
+          background: none; cursor: pointer; border-radius: 0.3rem;
+        }
+      </style>
+      <div class="panel">
+        <div class="row">
+          <label>Tamaño <span class="val" id="size-val"></span></label>
+          <input type="range" id="size" min="0.3" max="2.5" step="0.1" />
+        </div>
+        <div class="row">
+          <label>Velocidad <span class="val" id="speed-val"></span></label>
+          <input type="range" id="speed" min="0" max="3" step="0.1" />
+        </div>
+        <div class="row color-row">
+          <label>Color</label>
+          <input type="color" id="color" />
+        </div>
+      </div>
+    `;
+
+    const size = shadow.getElementById("size") as HTMLInputElement;
+    const speed = shadow.getElementById("speed") as HTMLInputElement;
+    const color = shadow.getElementById("color") as HTMLInputElement;
+    size.value = String(this.state.size);
+    speed.value = String(this.state.speed);
+    color.value = this.state.color;
+
+    const sizeVal = shadow.getElementById("size-val")!;
+    const speedVal = shadow.getElementById("speed-val")!;
+    const sync = () => {
+      sizeVal.textContent = `${this.state.size.toFixed(1)}×`;
+      speedVal.textContent = `${this.state.speed.toFixed(1)}×`;
+    };
+    sync();
+
+    size.addEventListener("input", () => {
+      this.state.size = Number(size.value);
+      sync();
+      this.emit();
+    });
+    speed.addEventListener("input", () => {
+      this.state.speed = Number(speed.value);
+      sync();
+      this.emit();
+    });
+    color.addEventListener("input", () => {
+      this.state.color = color.value;
+      this.emit();
+    });
+  }
+
+  private emit(): void {
+    this.dispatchEvent(
+      new CustomEvent<ControlsState>("controls-change", { detail: { ...this.state } }),
+    );
+  }
+}
+
+customElements.define("ar-controls", ARControls);
