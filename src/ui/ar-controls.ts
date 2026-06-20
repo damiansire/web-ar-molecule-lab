@@ -96,7 +96,7 @@ export class ARControls extends HTMLElement {
           align-items: flex-start; gap: 0.4rem;
           padding: 0.55rem 0.7rem; max-width: 94vw;
         }
-        .item { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
+        .item { position: relative; display: flex; align-items: center; }
         .iconbtn {
           appearance: none; cursor: pointer; display: grid; place-items: center;
           width: 2.4rem; height: 2.4rem; border-radius: 0.7rem;
@@ -104,15 +104,25 @@ export class ARControls extends HTMLElement {
           color: #f9fafb; border: 2px solid transparent;
           transition: border-color .15s, background .15s, transform .1s;
         }
-        .iconbtn svg { display: block; }
+        .iconbtn svg { display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.5)); }
         .iconbtn:hover { background: rgba(244, 94, 97, 0.3); }
         .iconbtn:active { transform: scale(0.92); }
         .iconbtn[aria-pressed="true"] {
           border-color: #f45e61; background: rgba(244, 94, 97, 0.85);
         }
-        input[type="color"] {
+        /* botón de color: el fondo del propio ícono refleja el color elegido */
+        .iconbtn.colorbtn { border-color: rgba(255, 255, 255, 0.3); }
+        .iconbtn.colorbtn:hover { filter: brightness(1.1); }
+        /* swatch de un toggle: cuelga por fuera/debajo, sin agrandar la barra */
+        .swatch {
+          position: absolute; top: calc(100% + 0.7rem); left: 50%;
+          transform: translateX(-50%);
           width: 2.4rem; height: 0.95rem; padding: 0; cursor: pointer;
-          border: 1px solid rgba(255,255,255,0.25); border-radius: 0.4rem; background: none;
+          border: 1px solid rgba(255,255,255,0.3); border-radius: 0.4rem; background: none;
+        }
+        /* input de color oculto (lo dispara el botón de color de figura) */
+        .hidden-color {
+          position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
         }
 
         /* Panel lateral de sliders */
@@ -183,7 +193,10 @@ export class ARControls extends HTMLElement {
       item.append(btn);
       const swatch =
         colorKey && colorTitle ? this.makeColor(colorKey, colorTitle) : null;
-      if (swatch) item.append(swatch);
+      if (swatch) {
+        swatch.className = "swatch"; // absoluto: cuelga debajo sin agrandar la barra
+        item.append(swatch);
+      }
       const sync = () => {
         const on = this.state[key];
         btn.setAttribute("aria-pressed", String(on));
@@ -198,14 +211,21 @@ export class ARControls extends HTMLElement {
       topbar.append(item);
     };
 
-    // Ítem de color puro (la figura siempre tiene color): el ícono abre el
-    // selector y la muestra queda siempre visible.
+    // Ítem de color puro (la figura siempre tiene color): el fondo del ícono
+    // refleja el color y al hacer click abre el selector. Sin muestra debajo,
+    // así no cambia la altura de la barra.
     const colorItem = (key: StringKey, icon: IconName, title: string) => {
       const item = el("div", "item");
       const btn = iconButton(icon, title);
-      const swatch = this.makeColor(key, title);
-      btn.addEventListener("click", () => swatch.click());
-      item.append(btn, swatch);
+      btn.classList.add("colorbtn");
+      btn.style.background = this.state[key];
+      const input = this.makeColor(key, title);
+      input.className = "hidden-color";
+      input.addEventListener("input", () => {
+        btn.style.background = input.value;
+      });
+      btn.addEventListener("click", () => input.click());
+      item.append(btn, input);
       topbar.append(item);
     };
 
