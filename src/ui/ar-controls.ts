@@ -75,58 +75,64 @@ export class ARControls extends HTMLElement {
     const shadow = this.shadowRoot ?? this.attachShadow({ mode: "open" });
     shadow.innerHTML = `
       <style>
-        :host { display: block; }
-        .panel {
-          display: flex; flex-direction: column; gap: 0.7rem;
-          padding: 0.85rem 1rem;
+        :host {
+          position: absolute; inset: 0; display: block;
+          pointer-events: none; /* sólo los controles capturan clics */
+          color: #f9fafb; font: 600 0.8rem/1.2 system-ui, sans-serif;
+        }
+        .surface {
           background: rgba(17, 24, 39, 0.55);
           border: 1px solid rgba(255, 255, 255, 0.12);
-          border-radius: 0.8rem;
+          border-radius: 0.9rem;
           backdrop-filter: blur(8px);
-          color: #f9fafb;
-          font: 600 0.8rem/1.2 system-ui, sans-serif;
-          width: 13rem; max-width: 72vw; max-height: 82vh; overflow-y: auto;
+          pointer-events: auto;
         }
-        .sliders { display: flex; flex-direction: column; gap: 0.55rem; }
-        .row { display: flex; flex-direction: column; gap: 0.3rem; }
-        .row label { display: flex; align-items: center; justify-content: space-between; opacity: 0.9; }
-        .ico { display: inline-flex; }
-        .ico svg, .iconbtn svg { display: block; }
-        .val { color: #f45e61; font-variant-numeric: tabular-nums; }
-        input[type="range"] { width: 100%; accent-color: #f45e61; cursor: pointer; }
-        .sep { height: 1px; background: rgba(255,255,255,0.12); }
 
-        /* Sección de íconos: botones toggle + muestras de color */
-        .icons { display: flex; flex-wrap: wrap; gap: 0.4rem; }
-        .iconbtn, input[type="color"] {
-          width: 2.4rem; height: 2.4rem; cursor: pointer;
-          border-radius: 0.7rem;
+        /* Barra superior de íconos (toggles), con su color colgando debajo */
+        .topbar {
+          position: absolute; top: max(0.8rem, env(safe-area-inset-top));
+          left: 50%; transform: translateX(-50%);
+          display: flex; flex-wrap: wrap; justify-content: center;
+          align-items: flex-start; gap: 0.4rem;
+          padding: 0.55rem 0.7rem; max-width: 94vw;
         }
+        .item { display: flex; flex-direction: column; align-items: center; gap: 0.35rem; }
         .iconbtn {
-          appearance: none; display: grid; place-items: center;
+          appearance: none; cursor: pointer; display: grid; place-items: center;
+          width: 2.4rem; height: 2.4rem; border-radius: 0.7rem;
           background: rgba(255, 255, 255, 0.06);
           color: #f9fafb; border: 2px solid transparent;
           transition: border-color .15s, background .15s, transform .1s;
         }
+        .iconbtn svg { display: block; }
         .iconbtn:hover { background: rgba(244, 94, 97, 0.3); }
-        .iconbtn:active { transform: scale(0.94); }
+        .iconbtn:active { transform: scale(0.92); }
         .iconbtn[aria-pressed="true"] {
           border-color: #f45e61; background: rgba(244, 94, 97, 0.85);
         }
         input[type="color"] {
-          padding: 0; border: 2px solid rgba(255,255,255,0.18); background: none;
+          width: 2.4rem; height: 0.95rem; padding: 0; cursor: pointer;
+          border: 1px solid rgba(255,255,255,0.25); border-radius: 0.4rem; background: none;
         }
+
+        /* Panel lateral de sliders */
+        .sliders {
+          position: absolute; top: max(0.8rem, env(safe-area-inset-top)); left: 0.8rem;
+          display: flex; flex-direction: column; gap: 0.55rem;
+          padding: 0.85rem 1rem; width: 11.5rem; max-width: 58vw;
+        }
+        .row { display: flex; flex-direction: column; gap: 0.3rem; }
+        .row label { display: flex; align-items: center; justify-content: space-between; opacity: 0.9; }
+        .ico { display: inline-flex; }
+        .ico svg { display: block; }
+        .val { color: #f45e61; font-variant-numeric: tabular-nums; }
+        input[type="range"] { width: 100%; accent-color: #f45e61; cursor: pointer; }
       </style>
-      <div class="panel">
-        <div class="sliders"></div>
-        <div class="sep"></div>
-        <div class="icons" role="group" aria-label="Opciones / Options"></div>
-        <div class="icons colors" role="group" aria-label="Colores / Colors"></div>
-      </div>
+      <div class="topbar surface" role="group" aria-label="Opciones / Options"></div>
+      <div class="sliders surface" role="group" aria-label="Ajustes / Settings"></div>
     `;
+    const topbar = shadow.querySelector(".topbar") as HTMLElement;
     const sliders = shadow.querySelector(".sliders") as HTMLElement;
-    const icons = shadow.querySelector(".icons") as HTMLElement;
-    const colors = shadow.querySelector(".colors") as HTMLElement;
 
     const pct = (v: number) => `${Math.round(v * 100)}%`;
     const mult = (v: number) => `${v.toFixed(1)}×`;
@@ -163,46 +169,62 @@ export class ARControls extends HTMLElement {
       sliders.append(row);
     };
 
-    const iconToggle = (key: BooleanKey, icon: IconName, title: string) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "iconbtn";
-      btn.innerHTML = ICONS[icon];
-      btn.title = title;
-      btn.setAttribute("aria-label", title);
-      btn.setAttribute("aria-pressed", String(this.state[key]));
+    // Botón de ícono en la barra superior. Si trae `colorKey`, su muestra de
+    // color aparece debajo sólo cuando el toggle está activo.
+    const toggleItem = (
+      key: BooleanKey,
+      icon: IconName,
+      title: string,
+      colorKey?: StringKey,
+      colorTitle?: string,
+    ) => {
+      const item = el("div", "item");
+      const btn = iconButton(icon, title);
+      item.append(btn);
+      const swatch =
+        colorKey && colorTitle ? this.makeColor(colorKey, colorTitle) : null;
+      if (swatch) item.append(swatch);
+      const sync = () => {
+        const on = this.state[key];
+        btn.setAttribute("aria-pressed", String(on));
+        if (swatch) swatch.style.display = on ? "" : "none";
+      };
+      sync();
       btn.addEventListener("click", () => {
         this.state[key] = !this.state[key];
-        btn.setAttribute("aria-pressed", String(this.state[key]));
+        sync();
         this.emit();
       });
-      icons.append(btn);
+      topbar.append(item);
     };
 
-    const colorSwatch = (key: StringKey, title: string) => {
-      colors.append(this.makeColor(key, title));
+    // Ítem de color puro (la figura siempre tiene color): el ícono abre el
+    // selector y la muestra queda siempre visible.
+    const colorItem = (key: StringKey, icon: IconName, title: string) => {
+      const item = el("div", "item");
+      const btn = iconButton(icon, title);
+      const swatch = this.makeColor(key, title);
+      btn.addEventListener("click", () => swatch.click());
+      item.append(btn, swatch);
+      topbar.append(item);
     };
 
-    // --- Sliders ---
+    // --- Sliders (panel izquierdo) ---
     slider("size", "size", "Tamaño / Size", 0.3, 2.5, 0.1, mult);
     slider("speed", "speed", "Velocidad de giro / Spin speed", 0, 3, 0.1, mult);
     slider("opacity", "opacity", "Opacidad / Opacity", 0.2, 1, 0.05, pct);
     slider("metalness", "metalness", "Metálico / Metalness", 0, 1, 0.05, pct);
     slider("roughness", "roughness", "Rugosidad / Roughness", 0, 1, 0.05, pct);
 
-    // --- Íconos toggle ---
-    iconToggle("faces", "faces", "Caras (relleno) / Faces (fill)");
-    iconToggle("wireframe", "wireframe", "Malla / Wireframe");
-    iconToggle("edges", "edges", "Aristas / Edges");
-    iconToggle("shadow", "shadow", "Sombra / Shadow");
-    iconToggle("multiHand", "hand", "Dos manos / Two hands");
-    iconToggle("mirrored", "mirror", "Espejo / Mirror");
-    iconToggle("bgEnabled", "background", "Fondo de color / Color background");
-
-    // --- Colores ---
-    colorSwatch("color", "Color de figura / Figure color");
-    colorSwatch("edgeColor", "Color de arista / Edge color");
-    colorSwatch("bgColor", "Color de fondo / Background color");
+    // --- Barra superior de íconos ---
+    colorItem("color", "color", "Color de figura / Figure color");
+    toggleItem("faces", "faces", "Caras (relleno) / Faces (fill)");
+    toggleItem("wireframe", "wireframe", "Malla / Wireframe");
+    toggleItem("edges", "edges", "Aristas / Edges", "edgeColor", "Color de arista / Edge color");
+    toggleItem("shadow", "shadow", "Sombra / Shadow");
+    toggleItem("multiHand", "hand", "Dos manos / Two hands");
+    toggleItem("mirrored", "mirror", "Espejo / Mirror");
+    toggleItem("bgEnabled", "background", "Fondo / Background", "bgColor", "Color de fondo / Background color");
   }
 
   private makeColor(key: StringKey, title: string): HTMLInputElement {
@@ -236,6 +258,16 @@ function iconEl(name: IconName): HTMLSpanElement {
   span.className = "ico";
   span.innerHTML = ICONS[name];
   return span;
+}
+
+function iconButton(name: IconName, title: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "iconbtn";
+  btn.innerHTML = ICONS[name];
+  btn.title = title;
+  btn.setAttribute("aria-label", title);
+  return btn;
 }
 
 customElements.define("ar-controls", ARControls);

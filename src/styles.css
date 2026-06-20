@@ -136,7 +136,7 @@ button.primary:disabled {
 
 .ar-controls-panel {
   position: absolute;
-  top: max(1rem, env(safe-area-inset-top));
-  left: 1rem;
+  inset: 0;
   z-index: 3;
+  pointer-events: none; /* sólo los controles internos capturan clics */
 }
