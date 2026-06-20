@@ -124,8 +124,16 @@ async function renderAR(): Promise<void> {
     scene?.setSpeed(c.speed);
     scene?.setColor(c.color);
     scene?.setOpacity(c.opacity);
+    scene?.setMetalness(c.metalness);
+    scene?.setRoughness(c.roughness);
+    scene?.setWireframe(c.wireframe);
     scene?.setEdges(c.edges);
     scene?.setEdgeColor(c.edgeColor);
+    scene?.setShadow(c.shadow);
+    scene?.setMultiHand(c.multiHand);
+    // El espejado del overlay (escena) debe coincidir con el del <video> (CSS).
+    scene?.setMirrored(c.mirrored);
+    view.video.style.transform = c.mirrored ? "scaleX(-1)" : "none";
     // Fondo de color: oculta el video de la cámara y pinta el color elegido
     // detrás de la figura (equivale al "Background" de la versión original).
     view.video.style.visibility = c.bgEnabled ? "hidden" : "visible";

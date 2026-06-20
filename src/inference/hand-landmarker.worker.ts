@@ -74,7 +74,7 @@ async function init(
   landmarker = await mp.HandLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetPath: modelUrl, delegate: "CPU" },
     runningMode: "VIDEO",
-    numHands: 1,
+    numHands: 2,
   });
   post({ type: "ready" });
 }

@@ -1,17 +1,31 @@
 /**
- * Componente `<ar-controls>`: panel de ajustes de la figura (tamaño, velocidad
- * de giro y color). Recupera los sliders que tenía la versión original.
- * Emite `controls-change` con `{ size, speed, color }` en cada cambio.
+ * Componente `<ar-controls>`: panel de ajustes de la figura y la escena.
+ * Emite `controls-change` con el estado completo en cada cambio.
+ *
+ * El panel se construye de forma declarativa a partir de helpers (slider /
+ * color / toggle / toggle+color) para no repetir el cableado por cada control.
  */
 export interface ControlsState {
   size: number;
   speed: number;
-  color: string;
   /** Opacidad de la figura (0 = transparente, 1 = sólida). */
   opacity: number;
+  /** Metalización del material (0 = mate, 1 = metálico). */
+  metalness: number;
+  /** Rugosidad del material (0 = espejado, 1 = difuso). */
+  roughness: number;
+  color: string;
+  /** Modo malla (sólo aristas de triángulos, sin caras). */
+  wireframe: boolean;
   /** Muestra las aristas (bordes) de la figura. */
   edges: boolean;
   edgeColor: string;
+  /** Sombra (blob) bajo la figura. */
+  shadow: boolean;
+  /** Dibujar figuras en ambas manos. */
+  multiHand: boolean;
+  /** Vista espejada (selfie). */
+  mirrored: boolean;
   /** Si está activo, reemplaza el video de la cámara por un color sólido. */
   bgEnabled: boolean;
   bgColor: string;
@@ -20,13 +34,30 @@ export interface ControlsState {
 const DEFAULTS: ControlsState = {
   size: 1,
   speed: 1,
-  color: "#f45e61",
   opacity: 1,
+  metalness: 0.25,
+  roughness: 0.35,
+  color: "#f45e61",
+  wireframe: false,
   edges: false,
   edgeColor: "#0b1020",
+  shadow: false,
+  multiHand: false,
+  mirrored: true,
   bgEnabled: false,
   bgColor: "#101826",
 };
+
+// Claves de ControlsState agrupadas por tipo de valor, para tipar los helpers.
+type NumericKey = {
+  [K in keyof ControlsState]: ControlsState[K] extends number ? K : never;
+}[keyof ControlsState];
+type StringKey = {
+  [K in keyof ControlsState]: ControlsState[K] extends string ? K : never;
+}[keyof ControlsState];
+type BooleanKey = {
+  [K in keyof ControlsState]: ControlsState[K] extends boolean ? K : never;
+}[keyof ControlsState];
 
 export class ARControls extends HTMLElement {
   private state: ControlsState = { ...DEFAULTS };
@@ -37,7 +68,7 @@ export class ARControls extends HTMLElement {
       <style>
         :host { display: block; }
         .panel {
-          display: flex; flex-direction: column; gap: 0.6rem;
+          display: flex; flex-direction: column; gap: 0.55rem;
           padding: 0.85rem 1rem;
           background: rgba(17, 24, 39, 0.55);
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -45,7 +76,7 @@ export class ARControls extends HTMLElement {
           backdrop-filter: blur(8px);
           color: #f9fafb;
           font: 600 0.8rem/1.2 system-ui, sans-serif;
-          width: 12.5rem; max-width: 70vw;
+          width: 13rem; max-width: 72vw; max-height: 82vh; overflow-y: auto;
         }
         .row { display: flex; flex-direction: column; gap: 0.3rem; }
         .row label { display: flex; justify-content: space-between; opacity: 0.9; }
@@ -60,97 +91,94 @@ export class ARControls extends HTMLElement {
         .toggle { display: flex; align-items: center; gap: 0.45rem; cursor: pointer; }
         input[type="checkbox"] { accent-color: #f45e61; width: 1rem; height: 1rem; cursor: pointer; }
       </style>
-      <div class="panel">
-        <div class="row">
-          <label>Tamaño <span class="val" id="size-val"></span></label>
-          <input type="range" id="size" min="0.3" max="2.5" step="0.1" />
-        </div>
-        <div class="row">
-          <label>Velocidad <span class="val" id="speed-val"></span></label>
-          <input type="range" id="speed" min="0" max="3" step="0.1" />
-        </div>
-        <div class="row">
-          <label>Opacidad <span class="val" id="opacity-val"></span></label>
-          <input type="range" id="opacity" min="0.2" max="1" step="0.05" />
-        </div>
-        <div class="row color-row">
-          <label>Color figura</label>
-          <input type="color" id="color" />
-        </div>
-        <div class="row color-row">
-          <label class="toggle"><input type="checkbox" id="edges" /> Aristas</label>
-          <input type="color" id="edge-color" />
-        </div>
-        <div class="sep"></div>
-        <div class="row color-row">
-          <label class="toggle"><input type="checkbox" id="bg-enabled" /> Fondo de color</label>
-          <input type="color" id="bg-color" />
-        </div>
-      </div>
+      <div class="panel"></div>
     `;
+    const panel = shadow.querySelector(".panel") as HTMLElement;
 
-    const size = shadow.getElementById("size") as HTMLInputElement;
-    const speed = shadow.getElementById("speed") as HTMLInputElement;
-    const opacity = shadow.getElementById("opacity") as HTMLInputElement;
-    const color = shadow.getElementById("color") as HTMLInputElement;
-    const edges = shadow.getElementById("edges") as HTMLInputElement;
-    const edgeColor = shadow.getElementById("edge-color") as HTMLInputElement;
-    const bgEnabled = shadow.getElementById("bg-enabled") as HTMLInputElement;
-    const bgColor = shadow.getElementById("bg-color") as HTMLInputElement;
-    size.value = String(this.state.size);
-    speed.value = String(this.state.speed);
-    opacity.value = String(this.state.opacity);
-    color.value = this.state.color;
-    edges.checked = this.state.edges;
-    edgeColor.value = this.state.edgeColor;
-    bgEnabled.checked = this.state.bgEnabled;
-    bgColor.value = this.state.bgColor;
-
-    const sizeVal = shadow.getElementById("size-val")!;
-    const speedVal = shadow.getElementById("speed-val")!;
-    const opacityVal = shadow.getElementById("opacity-val")!;
-    const sync = () => {
-      sizeVal.textContent = `${this.state.size.toFixed(1)}×`;
-      speedVal.textContent = `${this.state.speed.toFixed(1)}×`;
-      opacityVal.textContent = `${Math.round(this.state.opacity * 100)}%`;
+    const slider = (
+      key: NumericKey,
+      label: string,
+      min: number,
+      max: number,
+      step: number,
+      fmt: (v: number) => string,
+    ) => {
+      const row = el("div", "row");
+      const lab = document.createElement("label");
+      const val = el("span", "val");
+      lab.append(`${label} `, val);
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(min);
+      input.max = String(max);
+      input.step = String(step);
+      input.value = String(this.state[key]);
+      const refresh = () => (val.textContent = fmt(this.state[key]));
+      refresh();
+      input.addEventListener("input", () => {
+        this.state[key] = Number(input.value);
+        refresh();
+        this.emit();
+      });
+      row.append(lab, input);
+      panel.append(row);
     };
-    sync();
 
-    size.addEventListener("input", () => {
-      this.state.size = Number(size.value);
-      sync();
+    const colorPicker = (key: StringKey, label: string) => {
+      const row = el("div", "row color-row");
+      const lab = document.createElement("label");
+      lab.textContent = label;
+      row.append(lab, this.makeColor(key));
+      panel.append(row);
+    };
+
+    const toggle = (key: BooleanKey, label: string, extra?: HTMLElement) => {
+      const row = el("div", extra ? "row color-row" : "row");
+      const lab = el("label", "toggle");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = this.state[key];
+      cb.addEventListener("change", () => {
+        this.state[key] = cb.checked;
+        this.emit();
+      });
+      lab.append(cb, document.createTextNode(` ${label}`));
+      row.append(lab);
+      if (extra) row.append(extra);
+      panel.append(row);
+    };
+
+    const sep = () => panel.append(el("div", "sep"));
+
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const mult = (v: number) => `${v.toFixed(1)}×`;
+
+    slider("size", "Tamaño", 0.3, 2.5, 0.1, mult);
+    slider("speed", "Velocidad", 0, 3, 0.1, mult);
+    slider("opacity", "Opacidad", 0.2, 1, 0.05, pct);
+    sep();
+    slider("metalness", "Metálico", 0, 1, 0.05, pct);
+    slider("roughness", "Rugosidad", 0, 1, 0.05, pct);
+    colorPicker("color", "Color figura");
+    toggle("wireframe", "Wireframe (malla)");
+    sep();
+    toggle("edges", "Aristas", this.makeColor("edgeColor"));
+    toggle("shadow", "Sombra");
+    sep();
+    toggle("multiHand", "Dos manos");
+    toggle("mirrored", "Espejo (selfie)");
+    toggle("bgEnabled", "Fondo de color", this.makeColor("bgColor"));
+  }
+
+  private makeColor(key: StringKey): HTMLInputElement {
+    const input = document.createElement("input");
+    input.type = "color";
+    input.value = this.state[key];
+    input.addEventListener("input", () => {
+      this.state[key] = input.value;
       this.emit();
     });
-    speed.addEventListener("input", () => {
-      this.state.speed = Number(speed.value);
-      sync();
-      this.emit();
-    });
-    opacity.addEventListener("input", () => {
-      this.state.opacity = Number(opacity.value);
-      sync();
-      this.emit();
-    });
-    color.addEventListener("input", () => {
-      this.state.color = color.value;
-      this.emit();
-    });
-    edges.addEventListener("change", () => {
-      this.state.edges = edges.checked;
-      this.emit();
-    });
-    edgeColor.addEventListener("input", () => {
-      this.state.edgeColor = edgeColor.value;
-      this.emit();
-    });
-    bgEnabled.addEventListener("change", () => {
-      this.state.bgEnabled = bgEnabled.checked;
-      this.emit();
-    });
-    bgColor.addEventListener("input", () => {
-      this.state.bgColor = bgColor.value;
-      this.emit();
-    });
+    return input;
   }
 
   private emit(): void {
@@ -158,6 +186,12 @@ export class ARControls extends HTMLElement {
       new CustomEvent<ControlsState>("controls-change", { detail: { ...this.state } }),
     );
   }
+}
+
+function el(tag: string, className: string): HTMLElement {
+  const node = document.createElement(tag);
+  node.className = className;
+  return node;
 }
 
 customElements.define("ar-controls", ARControls);
