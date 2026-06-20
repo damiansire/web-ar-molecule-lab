@@ -50,6 +50,9 @@ function render(): void {
       break;
     case "loading-model":
       appEl.appendChild(loadingScreen());
+      // Precargamos el chunk de Three.js en paralelo con la descarga del modelo,
+      // así su parseo no cae de golpe al pasar a la vista AR (menos "freeze").
+      void import("./render/ar-scene");
       startModel();
       break;
     case "ready":

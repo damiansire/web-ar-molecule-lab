@@ -35,6 +35,7 @@ import type { NormalizedLandmark } from "../domain/hand-tracking";
 
 const BASE = 120; // tamaño base de la figura en píxeles
 const MAX_FIGURES = 2; // tope de manos simultáneas
+const PREVIEW_SCALE = 0.55; // tamaño de la figura cuando está en la esquina (preview)
 
 function geometryFor(kind: FigureKind): BufferGeometry | null {
   switch (kind) {
@@ -64,6 +65,7 @@ interface FigureInstance {
   y: number;
   s: number;
   primed: boolean; // true una vez que tiene una posición real (para no interpolar desde 0,0)
+  parked: boolean; // true cuando está en la esquina (preview, sin mano)
 }
 
 export class ARScene {
@@ -125,7 +127,16 @@ export class ARScene {
       const shadow = new Mesh(this.shadowGeo, this.shadowMaterial);
       shadow.visible = false;
       this.scene.add(mesh, shadow);
-      this.instances.push({ mesh, edges, shadow, x: 0, y: 0, s: 1, primed: false });
+      this.instances.push({
+        mesh,
+        edges,
+        shadow,
+        x: 0,
+        y: 0,
+        s: 1,
+        primed: false,
+        parked: false,
+      });
     }
 
     this.resize();
@@ -264,35 +275,58 @@ export class ARScene {
 
     for (let i = 0; i < this.instances.length; i++) {
       const inst = this.instances[i];
-      const anchor =
-        this.figure !== "none" && i < maxFigures ? anchorOf(this.hands[i]) : null;
-      const visible = anchor !== null;
-      inst.mesh.visible = visible; // las aristas (hijas) heredan la visibilidad
-      inst.shadow.visible = visible && this.shadowEnabled;
+      const allow = this.figure !== "none" && i < maxFigures;
+      const anchor = allow ? anchorOf(this.hands[i]) : null;
 
-      if (visible && anchor) {
+      let tx: number;
+      let ty: number;
+      let ts: number;
+      let parked: boolean;
+
+      if (anchor) {
         const p = landmarkToScreen(anchor, w, h, this.mirrored);
-        const targetS = depthToScale(p.z) * this.sizeScale;
-        if (!inst.primed) {
-          // Primera detección: arrancamos en el objetivo (sin deslizar desde 0,0).
-          inst.x = p.x;
-          inst.y = p.y;
-          inst.s = targetS;
-          inst.primed = true;
-        } else {
-          inst.x += (p.x - inst.x) * smooth;
-          inst.y += (p.y - inst.y) * smooth;
-          inst.s += (targetS - inst.s) * smooth;
-        }
-        inst.mesh.position.set(inst.x, inst.y, 0);
-        inst.mesh.scale.setScalar(inst.s);
-        inst.mesh.rotation.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
-        // Sombra: elipse plana debajo de la figura, sin rotar.
-        inst.shadow.position.set(inst.x, inst.y + BASE * 0.55 * inst.s, -2);
-        inst.shadow.scale.set(inst.s, inst.s * 0.4, inst.s);
+        tx = p.x;
+        ty = p.y;
+        ts = depthToScale(p.z) * this.sizeScale;
+        parked = false;
+      } else if (i === 0 && this.figure !== "none") {
+        // Sin mano: la primera figura queda como preview en la esquina superior
+        // derecha, para ver cómo se ven los ajustes actuales.
+        ts = PREVIEW_SCALE * this.sizeScale;
+        const margin = BASE * 0.55 * ts + 16;
+        tx = w - margin;
+        ty = margin;
+        parked = true;
       } else {
-        inst.primed = false; // al reaparecer, vuelve a arrancar en el objetivo
+        inst.mesh.visible = false;
+        inst.shadow.visible = false;
+        inst.primed = false;
+        continue;
       }
+
+      inst.mesh.visible = true; // las aristas (hijas) heredan la visibilidad
+      inst.shadow.visible = this.shadowEnabled;
+
+      // Snap al primer frame o al cambiar de modo (mano <-> esquina), para no
+      // cruzar la pantalla deslizándose.
+      if (!inst.primed || inst.parked !== parked) {
+        inst.x = tx;
+        inst.y = ty;
+        inst.s = ts;
+        inst.primed = true;
+      } else {
+        inst.x += (tx - inst.x) * smooth;
+        inst.y += (ty - inst.y) * smooth;
+        inst.s += (ts - inst.s) * smooth;
+      }
+      inst.parked = parked;
+
+      inst.mesh.position.set(inst.x, inst.y, 0);
+      inst.mesh.scale.setScalar(inst.s);
+      inst.mesh.rotation.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
+      // Sombra: elipse plana debajo de la figura, sin rotar.
+      inst.shadow.position.set(inst.x, inst.y + BASE * 0.55 * inst.s, -2);
+      inst.shadow.scale.set(inst.s, inst.s * 0.4, inst.s);
     }
 
     this.renderer.render(this.scene, this.camera);
