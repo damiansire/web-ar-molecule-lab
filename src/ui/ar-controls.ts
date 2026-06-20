@@ -2,10 +2,12 @@
  * Componente `<ar-controls>`: panel de ajustes de la figura y la escena.
  * Emite `controls-change` con el estado completo en cada cambio.
  *
- * El panel se construye de forma declarativa a partir de helpers (slider /
- * color / toggle / toggle+color) para no repetir el cableado por cada control.
- * Cada control se muestra con un ícono (universal) y el nombre queda como
- * tooltip bilingüe, para que se entienda sin saber español.
+ * Dos secciones separadas:
+ *  - Sliders (valores continuos): tamaño, velocidad, opacidad, material.
+ *  - Íconos: toggles como botones que se "pintan" al activarse (sin checkbox),
+ *    más una fila de muestras de color.
+ * Cada control muestra un ícono universal; el nombre queda como tooltip
+ * bilingüe (es / en) para entenderlo sin saber español.
  */
 import { ICONS, type IconName } from "./icons";
 
@@ -75,7 +77,7 @@ export class ARControls extends HTMLElement {
       <style>
         :host { display: block; }
         .panel {
-          display: flex; flex-direction: column; gap: 0.55rem;
+          display: flex; flex-direction: column; gap: 0.7rem;
           padding: 0.85rem 1rem;
           background: rgba(17, 24, 39, 0.55);
           border: 1px solid rgba(255, 255, 255, 0.12);
@@ -85,24 +87,49 @@ export class ARControls extends HTMLElement {
           font: 600 0.8rem/1.2 system-ui, sans-serif;
           width: 13rem; max-width: 72vw; max-height: 82vh; overflow-y: auto;
         }
+        .sliders { display: flex; flex-direction: column; gap: 0.55rem; }
         .row { display: flex; flex-direction: column; gap: 0.3rem; }
         .row label { display: flex; align-items: center; justify-content: space-between; opacity: 0.9; }
         .ico { display: inline-flex; }
-        .ico svg { display: block; }
+        .ico svg, .iconbtn svg { display: block; }
         .val { color: #f45e61; font-variant-numeric: tabular-nums; }
         input[type="range"] { width: 100%; accent-color: #f45e61; cursor: pointer; }
-        .color-row { flex-direction: row; align-items: center; justify-content: space-between; }
-        input[type="color"] {
-          width: 2.4rem; height: 1.6rem; padding: 0; border: none;
-          background: none; cursor: pointer; border-radius: 0.3rem;
+        .sep { height: 1px; background: rgba(255,255,255,0.12); }
+
+        /* Sección de íconos: botones toggle + muestras de color */
+        .icons { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+        .iconbtn, input[type="color"] {
+          width: 2.4rem; height: 2.4rem; cursor: pointer;
+          border-radius: 0.7rem;
         }
-        .sep { height: 1px; background: rgba(255,255,255,0.12); margin: 0.1rem 0; }
-        .row label.toggle { display: flex; align-items: center; justify-content: flex-start; gap: 0.5rem; cursor: pointer; }
-        input[type="checkbox"] { accent-color: #f45e61; width: 1rem; height: 1rem; cursor: pointer; }
+        .iconbtn {
+          appearance: none; display: grid; place-items: center;
+          background: rgba(255, 255, 255, 0.06);
+          color: #f9fafb; border: 2px solid transparent;
+          transition: border-color .15s, background .15s, transform .1s;
+        }
+        .iconbtn:hover { background: rgba(244, 94, 97, 0.3); }
+        .iconbtn:active { transform: scale(0.94); }
+        .iconbtn[aria-pressed="true"] {
+          border-color: #f45e61; background: rgba(244, 94, 97, 0.85);
+        }
+        input[type="color"] {
+          padding: 0; border: 2px solid rgba(255,255,255,0.18); background: none;
+        }
       </style>
-      <div class="panel"></div>
+      <div class="panel">
+        <div class="sliders"></div>
+        <div class="sep"></div>
+        <div class="icons" role="group" aria-label="Opciones / Options"></div>
+        <div class="icons colors" role="group" aria-label="Colores / Colors"></div>
+      </div>
     `;
-    const panel = shadow.querySelector(".panel") as HTMLElement;
+    const sliders = shadow.querySelector(".sliders") as HTMLElement;
+    const icons = shadow.querySelector(".icons") as HTMLElement;
+    const colors = shadow.querySelector(".colors") as HTMLElement;
+
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    const mult = (v: number) => `${v.toFixed(1)}×`;
 
     const slider = (
       key: NumericKey,
@@ -133,62 +160,49 @@ export class ARControls extends HTMLElement {
         this.emit();
       });
       row.append(lab, input);
-      panel.append(row);
+      sliders.append(row);
     };
 
-    const colorPicker = (key: StringKey, icon: IconName, title: string) => {
-      const row = el("div", "row color-row");
-      row.title = title;
-      const lab = document.createElement("label");
-      lab.append(iconEl(icon));
-      row.append(lab, this.makeColor(key, title));
-      panel.append(row);
-    };
-
-    const toggle = (
-      key: BooleanKey,
-      icon: IconName,
-      title: string,
-      extra?: HTMLElement,
-    ) => {
-      const row = el("div", extra ? "row color-row" : "row");
-      row.title = title;
-      const lab = el("label", "toggle");
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.checked = this.state[key];
-      cb.setAttribute("aria-label", title);
-      cb.addEventListener("change", () => {
-        this.state[key] = cb.checked;
+    const iconToggle = (key: BooleanKey, icon: IconName, title: string) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "iconbtn";
+      btn.innerHTML = ICONS[icon];
+      btn.title = title;
+      btn.setAttribute("aria-label", title);
+      btn.setAttribute("aria-pressed", String(this.state[key]));
+      btn.addEventListener("click", () => {
+        this.state[key] = !this.state[key];
+        btn.setAttribute("aria-pressed", String(this.state[key]));
         this.emit();
       });
-      lab.append(cb, iconEl(icon));
-      row.append(lab);
-      if (extra) row.append(extra);
-      panel.append(row);
+      icons.append(btn);
     };
 
-    const sep = () => panel.append(el("div", "sep"));
+    const colorSwatch = (key: StringKey, title: string) => {
+      colors.append(this.makeColor(key, title));
+    };
 
-    const pct = (v: number) => `${Math.round(v * 100)}%`;
-    const mult = (v: number) => `${v.toFixed(1)}×`;
-
+    // --- Sliders ---
     slider("size", "size", "Tamaño / Size", 0.3, 2.5, 0.1, mult);
     slider("speed", "speed", "Velocidad de giro / Spin speed", 0, 3, 0.1, mult);
     slider("opacity", "opacity", "Opacidad / Opacity", 0.2, 1, 0.05, pct);
-    sep();
     slider("metalness", "metalness", "Metálico / Metalness", 0, 1, 0.05, pct);
     slider("roughness", "roughness", "Rugosidad / Roughness", 0, 1, 0.05, pct);
-    colorPicker("color", "color", "Color de figura / Figure color");
-    toggle("faces", "faces", "Caras (relleno) / Faces (fill)");
-    toggle("wireframe", "wireframe", "Malla / Wireframe");
-    sep();
-    toggle("edges", "edges", "Aristas / Edges", this.makeColor("edgeColor", "Color de arista / Edge color"));
-    toggle("shadow", "shadow", "Sombra / Shadow");
-    sep();
-    toggle("multiHand", "hand", "Dos manos / Two hands");
-    toggle("mirrored", "mirror", "Espejo / Mirror");
-    toggle("bgEnabled", "background", "Fondo de color / Color background", this.makeColor("bgColor", "Color de fondo / Background color"));
+
+    // --- Íconos toggle ---
+    iconToggle("faces", "faces", "Caras (relleno) / Faces (fill)");
+    iconToggle("wireframe", "wireframe", "Malla / Wireframe");
+    iconToggle("edges", "edges", "Aristas / Edges");
+    iconToggle("shadow", "shadow", "Sombra / Shadow");
+    iconToggle("multiHand", "hand", "Dos manos / Two hands");
+    iconToggle("mirrored", "mirror", "Espejo / Mirror");
+    iconToggle("bgEnabled", "background", "Fondo de color / Color background");
+
+    // --- Colores ---
+    colorSwatch("color", "Color de figura / Figure color");
+    colorSwatch("edgeColor", "Color de arista / Edge color");
+    colorSwatch("bgColor", "Color de fondo / Background color");
   }
 
   private makeColor(key: StringKey, title: string): HTMLInputElement {
