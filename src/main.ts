@@ -157,3 +157,13 @@ interface VideoFrameCallbackHost {
 }
 
 render();
+
+// Hook de depuración: en el dev server, o en producción con `?debug` en la URL.
+// Permite inspeccionar el estado e inyectar manos sintéticas para probar el
+// render sin una cámara/mano reales.
+if (import.meta.env.DEV || location.search.includes("debug")) {
+  (window as unknown as { __ar: unknown }).__ar = {
+    status: () => state.status,
+    injectHands: (hands: unknown) => scene?.setHands(hands as never),
+  };
+}

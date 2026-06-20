@@ -6,7 +6,7 @@ import type { NormalizedLandmark } from "../domain/hand-tracking";
 
 /** Mensajes que el hilo principal envía al worker. */
 export type WorkerRequest =
-  | { type: "init"; wasmBase: string; modelUrl: string }
+  | { type: "init"; bundleUrl: string; wasmBase: string; modelUrl: string }
   | { type: "frame"; bitmap: ImageBitmap; timestamp: number };
 
 /** Mensajes que el worker devuelve al hilo principal. */

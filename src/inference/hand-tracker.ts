@@ -18,30 +18,39 @@ export class HandTracker {
   private listener: HandsListener | null = null;
 
   constructor() {
+    // Worker clásico (sin `type: "module"`): el worker no tiene imports ESM y
+    // carga MediaPipe con `importScripts`. Ver nota en el archivo del worker.
     this.worker = new Worker(
       new URL("./hand-landmarker.worker.ts", import.meta.url),
-      { type: "module" },
     );
   }
 
   /** Arranca el worker y resuelve cuando el modelo quedó cargado. */
   init(): Promise<void> {
     return new Promise((resolve, reject) => {
+      const onError = (e: ErrorEvent) => {
+        this.worker.removeEventListener("error", onError);
+        reject(new Error(`Worker error: ${e.message || "no se pudo cargar el worker"}`));
+      };
       const onMessage = (event: MessageEvent<WorkerResponse>) => {
         const msg = event.data;
         if (msg.type === "ready") {
           this.ready = true;
           this.worker.removeEventListener("message", onMessage);
+          this.worker.removeEventListener("error", onError);
           this.worker.addEventListener("message", this.onResult);
           resolve();
         } else if (msg.type === "init-error") {
           this.worker.removeEventListener("message", onMessage);
+          this.worker.removeEventListener("error", onError);
           reject(new Error(msg.message));
         }
       };
       this.worker.addEventListener("message", onMessage);
+      this.worker.addEventListener("error", onError);
       const req: WorkerRequest = {
         type: "init",
+        bundleUrl: MEDIAPIPE.bundle,
         wasmBase: MEDIAPIPE.wasmBase,
         modelUrl: MEDIAPIPE.handLandmarkerModel,
       };

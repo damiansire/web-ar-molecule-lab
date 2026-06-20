@@ -48,9 +48,14 @@ npm run build      # build de producción a dist/
 
 ## Configuración del modelo
 
-Los assets de MediaPipe (WASM + modelo `.task`) se cargan desde el CDN oficial,
-fijados por versión en [`src/config.ts`](src/config.ts). Para self-hostearlos,
-copiá esos archivos a `public/` y cambiá las dos URLs.
+Los assets de MediaPipe (bundle JS + WASM + modelo `.task`) se cargan desde el
+CDN oficial, fijados por versión en [`src/config.ts`](src/config.ts). Para
+self-hostearlos, copiá esos archivos a `public/` y cambiá las URLs.
+
+El worker es **clásico** (no de tipo módulo) y carga MediaPipe con
+`importScripts`: MediaPipe lo necesita, y así el mismo código funciona igual en
+el dev server y en el build. Detalle en
+[`hand-landmarker.worker.ts`](src/inference/hand-landmarker.worker.ts).
 
 ## Stack
 

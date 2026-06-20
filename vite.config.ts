@@ -5,7 +5,9 @@ import { defineConfig } from "vite";
 export default defineConfig({
   base: "./",
   worker: {
-    format: "es",
+    // El worker es clásico (carga MediaPipe con importScripts); ver el archivo
+    // del worker. IIFE es el formato correcto para un worker clásico.
+    format: "iife",
   },
   build: {
     target: "es2022",
