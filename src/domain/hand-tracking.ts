@@ -43,15 +43,23 @@ export function landmarkToScreen(
 }
 
 /**
+ * Devuelve el landmark ancla de una mano, o `null` si la lista está incompleta.
+ */
+export function anchorOf(
+  hand: readonly NormalizedLandmark[] | undefined,
+): NormalizedLandmark | null {
+  if (!hand || hand.length <= ANCHOR_LANDMARK_INDEX) return null;
+  return hand[ANCHOR_LANDMARK_INDEX] ?? null;
+}
+
+/**
  * Devuelve el landmark ancla de la primera mano detectada, o `null` si no hay
  * ninguna mano o la lista está incompleta.
  */
 export function pickAnchor(
   hands: readonly (readonly NormalizedLandmark[])[],
 ): NormalizedLandmark | null {
-  const first = hands[0];
-  if (!first || first.length <= ANCHOR_LANDMARK_INDEX) return null;
-  return first[ANCHOR_LANDMARK_INDEX] ?? null;
+  return anchorOf(hands[0]);
 }
 
 /**
