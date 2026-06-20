@@ -11,6 +11,9 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DirectionalLight,
+  EdgesGeometry,
+  LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshStandardMaterial,
   OrthographicCamera,
@@ -54,7 +57,9 @@ export class ARScene {
     metalness: 0.25,
     roughness: 0.35,
   });
+  private edgeMaterial = new LineBasicMaterial({ color: 0x0b1020 });
   private mesh: Mesh;
+  private edges: LineSegments;
   private figure: FigureKind = "cube";
   private hands: NormalizedLandmark[][] = [];
   private mirrored = true;
@@ -78,6 +83,14 @@ export class ARScene {
     this.scene.add(key);
 
     this.mesh = new Mesh(geometryFor("cube") ?? new BoxGeometry(1, 1, 1), this.material);
+    // Las aristas son hijas del mesh: heredan posición/rotación/escala y se
+    // ocultan automáticamente cuando el mesh no es visible (sin mano).
+    this.edges = new LineSegments(
+      new EdgesGeometry(this.mesh.geometry),
+      this.edgeMaterial,
+    );
+    this.edges.visible = false;
+    this.mesh.add(this.edges);
     this.scene.add(this.mesh);
 
     this.resize();
@@ -92,6 +105,8 @@ export class ARScene {
     if (geo) {
       this.mesh.geometry.dispose();
       this.mesh.geometry = geo;
+      this.edges.geometry.dispose();
+      this.edges.geometry = new EdgesGeometry(geo);
     }
   }
 
@@ -112,6 +127,22 @@ export class ARScene {
   /** Color de la figura (acepta cualquier color CSS, ej. "#f45e61"). */
   setColor(color: string): void {
     this.material.color.set(color);
+  }
+
+  /** Opacidad de la figura (0 = transparente, 1 = sólida). */
+  setOpacity(opacity: number): void {
+    this.material.transparent = opacity < 1;
+    this.material.opacity = opacity;
+  }
+
+  /** Muestra/oculta las aristas (bordes) de la figura. */
+  setEdges(enabled: boolean): void {
+    this.edges.visible = enabled;
+  }
+
+  /** Color de las aristas. */
+  setEdgeColor(color: string): void {
+    this.edgeMaterial.color.set(color);
   }
 
   /** Ajusta el renderer y la cámara al tamaño real del canvas. */
@@ -163,6 +194,8 @@ export class ARScene {
   dispose(): void {
     this.stop();
     this.mesh.geometry.dispose();
+    this.edges.geometry.dispose();
+    this.edgeMaterial.dispose();
     this.material.dispose();
     this.renderer.dispose();
   }

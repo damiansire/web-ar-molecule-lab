@@ -119,16 +119,17 @@ async function renderAR(): Promise<void> {
   });
 
   view.controls.addEventListener("controls-change", (e) => {
-    const { size, speed, color, bgEnabled, bgColor } = (
-      e as CustomEvent<ControlsState>
-    ).detail;
-    scene?.setSize(size);
-    scene?.setSpeed(speed);
-    scene?.setColor(color);
+    const c = (e as CustomEvent<ControlsState>).detail;
+    scene?.setSize(c.size);
+    scene?.setSpeed(c.speed);
+    scene?.setColor(c.color);
+    scene?.setOpacity(c.opacity);
+    scene?.setEdges(c.edges);
+    scene?.setEdgeColor(c.edgeColor);
     // Fondo de color: oculta el video de la cámara y pinta el color elegido
     // detrás de la figura (equivale al "Background" de la versión original).
-    view.video.style.visibility = bgEnabled ? "hidden" : "visible";
-    view.root.style.background = bgEnabled ? bgColor : "#000";
+    view.video.style.visibility = c.bgEnabled ? "hidden" : "visible";
+    view.root.style.background = c.bgEnabled ? c.bgColor : "#000";
   });
 
   const onResize = () => scene?.resize();

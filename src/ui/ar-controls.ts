@@ -7,6 +7,11 @@ export interface ControlsState {
   size: number;
   speed: number;
   color: string;
+  /** Opacidad de la figura (0 = transparente, 1 = sólida). */
+  opacity: number;
+  /** Muestra las aristas (bordes) de la figura. */
+  edges: boolean;
+  edgeColor: string;
   /** Si está activo, reemplaza el video de la cámara por un color sólido. */
   bgEnabled: boolean;
   bgColor: string;
@@ -16,6 +21,9 @@ const DEFAULTS: ControlsState = {
   size: 1,
   speed: 1,
   color: "#f45e61",
+  opacity: 1,
+  edges: false,
+  edgeColor: "#0b1020",
   bgEnabled: false,
   bgColor: "#101826",
 };
@@ -61,9 +69,17 @@ export class ARControls extends HTMLElement {
           <label>Velocidad <span class="val" id="speed-val"></span></label>
           <input type="range" id="speed" min="0" max="3" step="0.1" />
         </div>
+        <div class="row">
+          <label>Opacidad <span class="val" id="opacity-val"></span></label>
+          <input type="range" id="opacity" min="0.2" max="1" step="0.05" />
+        </div>
         <div class="row color-row">
           <label>Color figura</label>
           <input type="color" id="color" />
+        </div>
+        <div class="row color-row">
+          <label class="toggle"><input type="checkbox" id="edges" /> Aristas</label>
+          <input type="color" id="edge-color" />
         </div>
         <div class="sep"></div>
         <div class="row color-row">
@@ -75,20 +91,28 @@ export class ARControls extends HTMLElement {
 
     const size = shadow.getElementById("size") as HTMLInputElement;
     const speed = shadow.getElementById("speed") as HTMLInputElement;
+    const opacity = shadow.getElementById("opacity") as HTMLInputElement;
     const color = shadow.getElementById("color") as HTMLInputElement;
+    const edges = shadow.getElementById("edges") as HTMLInputElement;
+    const edgeColor = shadow.getElementById("edge-color") as HTMLInputElement;
     const bgEnabled = shadow.getElementById("bg-enabled") as HTMLInputElement;
     const bgColor = shadow.getElementById("bg-color") as HTMLInputElement;
     size.value = String(this.state.size);
     speed.value = String(this.state.speed);
+    opacity.value = String(this.state.opacity);
     color.value = this.state.color;
+    edges.checked = this.state.edges;
+    edgeColor.value = this.state.edgeColor;
     bgEnabled.checked = this.state.bgEnabled;
     bgColor.value = this.state.bgColor;
 
     const sizeVal = shadow.getElementById("size-val")!;
     const speedVal = shadow.getElementById("speed-val")!;
+    const opacityVal = shadow.getElementById("opacity-val")!;
     const sync = () => {
       sizeVal.textContent = `${this.state.size.toFixed(1)}×`;
       speedVal.textContent = `${this.state.speed.toFixed(1)}×`;
+      opacityVal.textContent = `${Math.round(this.state.opacity * 100)}%`;
     };
     sync();
 
@@ -102,8 +126,21 @@ export class ARControls extends HTMLElement {
       sync();
       this.emit();
     });
+    opacity.addEventListener("input", () => {
+      this.state.opacity = Number(opacity.value);
+      sync();
+      this.emit();
+    });
     color.addEventListener("input", () => {
       this.state.color = color.value;
+      this.emit();
+    });
+    edges.addEventListener("change", () => {
+      this.state.edges = edges.checked;
+      this.emit();
+    });
+    edgeColor.addEventListener("input", () => {
+      this.state.edgeColor = edgeColor.value;
       this.emit();
     });
     bgEnabled.addEventListener("change", () => {
