@@ -1,52 +1,57 @@
-# Project Name
+# AR Hand Figures
 
-Brief description of the project.
+Realidad aumentada en el navegador: detecta tu mano con la cámara y dibuja una
+figura 3D que la sigue en tiempo real. La detección corre en un **Web Worker**
+(MediaPipe Hand Landmarker) para no bloquear el hilo principal, y el render 3D
+lo hace **Three.js**.
 
-## Table of Contents
+> Reescritura completa de la versión original (p5.js + ml5.js en el hilo
+> principal). Se modernizó el stack, se separó el dominio puro de los _shells_
+> imperativos y se movió la inferencia a un worker.
 
-- [Description](#description)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Semantic Commits](#semantic-commits)
-- [Contributing](#contributing)
+## Cómo funciona
 
-## Description
+```
+┌───────────────── hilo principal ─────────────────┐      ┌──── Web Worker ────┐
+│  cámara (getUserMedia) ──► <video>                │      │  MediaPipe         │
+│        │ ImageBitmap (transferible)               │ ───► │  HandLandmarker    │
+│        ▼                                          │      │  (WASM + GPU)      │
+│  Three.js  ◄── landmarks ──────────────────────── │ ◄─── │  detectForVideo()  │
+│  (figura 3D sobre la mano)                        │      └────────────────────┘
+└───────────────────────────────────────────────────┘
+```
 
-Detailed description of the project and its main functionalities.
+- **`src/domain/`** — lógica pura y testeada (máquina de estados, mapeo de
+  landmarks a pantalla, catálogo de figuras). Sin DOM ni dependencias.
+- **`src/camera/`** — acceso a la cámara con errores tipados.
+- **`src/inference/`** — el worker de MediaPipe y su cliente con back-pressure
+  (un solo cuadro en vuelo; si llega otro antes de terminar, se descarta).
+- **`src/render/`** — escena Three.js con cámara ortográfica mapeada a píxeles.
+- **`src/ui/`** — pantallas (permiso / carga / error) y el `<figure-selector>`.
 
-## Installation
+## Requisitos
 
-Steps to install and configure the project in a local environment.
+- Node.js ≥ 20
+- Un navegador con WebGL y `getUserMedia` (HTTPS o `localhost`).
 
-## Usage
+## Desarrollo
 
-Examples of how to use the project and its different features.
+```bash
+npm install
+npm run dev        # servidor de desarrollo (Vite)
+npm test           # tests de dominio (Vitest)
+npm run typecheck  # TypeScript en modo estricto
+npm run build      # build de producción a dist/
+```
 
-## Semantic Commits
+> La cámara sólo funciona en `localhost` o bajo HTTPS (requisito del navegador).
 
-In this project, we use semantic commits to maintain a clear and organized commit history. This makes it easier to understand the changes made and automates the release process.
+## Configuración del modelo
 
-The types of semantic commits we use are:
+Los assets de MediaPipe (WASM + modelo `.task`) se cargan desde el CDN oficial,
+fijados por versión en [`src/config.ts`](src/config.ts). Para self-hostearlos,
+copiá esos archivos a `public/` y cambiá las dos URLs.
 
-- **chore:** Used for maintenance tasks, such as dependency updates, tool configuration, or documentation changes that do not affect the main source code.
+## Stack
 
-  - Example: `chore: update dependencies to version X`
-
-- **feat:** Used to add new features to the project.
-
-  - Example: `feat: implement login functionality`
-
-- **refactor:** Used to make changes to the code that improve its structure or readability, but do not introduce new functionality or modify existing behavior.
-
-  - Example: `refactor: rename variables for clarity`
-
-- **structure:** Used for changes related to the project's folder structure or overall architecture.
-
-  - Example: `structure: reorganize components folders`
-
-- **docs:** Used for changes related to project documentation, such as README updates, code comments, or online documentation.
-- Ejemplo: `docs: update API documentation`
-
-## Contributing
-
-Guidelines on how to contribute to the project, whether by reporting bugs, submitting pull requests, or suggesting improvements.
+Vite · TypeScript · Three.js · @mediapipe/tasks-vision · Vitest
