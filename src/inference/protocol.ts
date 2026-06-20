@@ -6,11 +6,17 @@ import type { NormalizedLandmark } from "../domain/hand-tracking";
 
 /** Mensajes que el hilo principal envía al worker. */
 export type WorkerRequest =
-  | { type: "init"; bundleUrl: string; wasmBase: string; modelUrl: string }
+  | {
+      type: "init";
+      bundleUrl: string;
+      wasmBase: string;
+      modelUrl: string;
+      forceCpu: boolean;
+    }
   | { type: "frame"; bitmap: ImageBitmap; timestamp: number };
 
 /** Mensajes que el worker devuelve al hilo principal. */
 export type WorkerResponse =
-  | { type: "ready" }
+  | { type: "ready"; delegate: "GPU" | "CPU" }
   | { type: "init-error"; message: string }
   | { type: "result"; timestamp: number; hands: NormalizedLandmark[][] };

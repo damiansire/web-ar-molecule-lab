@@ -188,6 +188,7 @@ render();
 if (import.meta.env.DEV || location.search.includes("debug")) {
   (window as unknown as { __ar: unknown }).__ar = {
     status: () => state.status,
+    delegate: () => tracker?.delegate ?? null,
     injectHands: (hands: unknown) => scene?.setHands(hands as never),
   };
 }
