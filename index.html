@@ -1,44 +1,27 @@
 <!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <!-- Global site tag (gtag.js) - Google Analytics -->
+<html lang="es">
+  <head>
+    <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-ELNQT5K3ND"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script>
-        window.dataLayer = window.dataLayer || [];
-
-        function gtag() {
-            dataLayer.push(arguments);
-        }
-        gtag('js', new Date());
-
-        gtag('config', 'G-ELNQT5K3ND');
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag("js", new Date());
+      gtag("config", "G-ELNQT5K3ND");
     </script>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IA for all</title>
-</head>
 
-<body>
-    <div id="app">
-    </div>
-    <script type="module" src="./app.js"></script>
-</body>
-
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="description"
+      content="Realidad aumentada en el navegador: detección de mano con MediaPipe (en Web Worker) y figuras 3D con Three.js."
+    />
+    <title>AR Hand Figures</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
 </html>
-<!--
-    <section class="canvas-container">
-
-    </section>
-
-    <section>
-        <button class="colorButton optionButton">Color</button>
-        <button class="backgroundButton optionButton">Background</button>
-    </section>
-  
-
-    <script src="./js/scripts.js"></script>
-    <script src="components/figure-selector.js"></script>
-    <script src="components/loading-model-screen.js"></script>
-    -->
