@@ -168,6 +168,15 @@ export class ARScene {
     this.material.color.set(color);
   }
 
+  /**
+   * Muestra/oculta el relleno de las caras. Al ocultar sólo el material (no el
+   * mesh), las aristas —que tienen su propio material— siguen visibles, así se
+   * puede tener una figura "hueca" con sólo el contorno.
+   */
+  setFaces(enabled: boolean): void {
+    this.material.visible = enabled;
+  }
+
   /** Opacidad de la figura (0 = transparente, 1 = sólida). */
   setOpacity(opacity: number): void {
     this.material.transparent = opacity < 1;

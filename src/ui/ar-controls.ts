@@ -15,6 +15,8 @@ export interface ControlsState {
   /** Rugosidad del material (0 = espejado, 1 = difuso). */
   roughness: number;
   color: string;
+  /** Muestra el relleno de las caras (apagado = figura hueca, sólo contorno). */
+  faces: boolean;
   /** Modo malla (sólo aristas de triángulos, sin caras). */
   wireframe: boolean;
   /** Muestra las aristas (bordes) de la figura. */
@@ -38,6 +40,7 @@ const DEFAULTS: ControlsState = {
   metalness: 0.25,
   roughness: 0.35,
   color: "#f45e61",
+  faces: true,
   wireframe: false,
   edges: false,
   edgeColor: "#0b1020",
@@ -160,6 +163,7 @@ export class ARControls extends HTMLElement {
     slider("metalness", "Metálico", 0, 1, 0.05, pct);
     slider("roughness", "Rugosidad", 0, 1, 0.05, pct);
     colorPicker("color", "Color figura");
+    toggle("faces", "Caras (relleno)");
     toggle("wireframe", "Wireframe (malla)");
     sep();
     toggle("edges", "Aristas", this.makeColor("edgeColor"));

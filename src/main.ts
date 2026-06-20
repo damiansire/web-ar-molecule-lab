@@ -123,6 +123,7 @@ async function renderAR(): Promise<void> {
     scene?.setSize(c.size);
     scene?.setSpeed(c.speed);
     scene?.setColor(c.color);
+    scene?.setFaces(c.faces);
     scene?.setOpacity(c.opacity);
     scene?.setMetalness(c.metalness);
     scene?.setRoughness(c.roughness);
