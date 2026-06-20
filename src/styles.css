@@ -1,0 +1,135 @@
+:root {
+  --bg: #0b1020;
+  --surface: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: #f4f6fb;
+  --muted: #aab2c5;
+  --accent: #f45e61;
+  --accent-strong: #e23e42;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 800px at 70% -10%, #1b2440 0, transparent 60%),
+    radial-gradient(900px 600px at -10% 110%, #1a2440 0, transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#app {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- pantallas (permiso / cargando / error) --- */
+.screen {
+  width: min(92vw, 30rem);
+  margin: 1.5rem;
+  padding: 2rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  text-align: center;
+}
+
+.screen h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+.screen p {
+  margin: 0 0 1.5rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+button.primary {
+  appearance: none;
+  cursor: pointer;
+  width: 100%;
+  padding: 0.8rem 1.25rem;
+  font: 600 1rem/1 system-ui, sans-serif;
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border: none;
+  border-radius: 0.65rem;
+  transition: transform 0.1s, filter 0.15s;
+}
+
+button.primary:hover {
+  filter: brightness(1.08);
+}
+
+button.primary:active {
+  transform: scale(0.98);
+}
+
+button.primary:disabled {
+  filter: grayscale(0.6);
+  cursor: progress;
+}
+
+.spinner {
+  width: 2.5rem;
+  height: 2.5rem;
+  margin: 0 auto;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- vista de realidad aumentada --- */
+.ar-view {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+}
+
+.ar-video,
+.ar-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ar-video {
+  object-fit: cover;
+  transform: scaleX(-1); /* vista selfie: espejada */
+}
+
+.ar-canvas {
+  pointer-events: none; /* los clics pasan al selector */
+}
+
+.ar-selector {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 2;
+}
