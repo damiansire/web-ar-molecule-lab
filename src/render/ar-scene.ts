@@ -60,6 +60,12 @@ export class ARScene {
   private mirrored = true;
   private running = false;
 
+  // Controles ajustables por el usuario.
+  private sizeScale = 1; // multiplicador de tamaño (sobre la escala por profundidad)
+  private rotationSpeed = 1; // multiplicador de velocidad de giro
+  private spin = 0; // ángulo acumulado (rad), para no saltar al cambiar la velocidad
+  private lastTime = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true });
     this.renderer.setClearColor(0x000000, 0); // fondo transparente: se ve el video
@@ -93,6 +99,21 @@ export class ARScene {
     this.hands = hands;
   }
 
+  /** Multiplicador de tamaño de la figura (1 = tamaño base). */
+  setSize(scale: number): void {
+    this.sizeScale = scale;
+  }
+
+  /** Multiplicador de velocidad de giro (0 = quieta, 1 = normal). */
+  setSpeed(speed: number): void {
+    this.rotationSpeed = speed;
+  }
+
+  /** Color de la figura (acepta cualquier color CSS, ej. "#f45e61"). */
+  setColor(color: string): void {
+    this.material.color.set(color);
+  }
+
   /** Ajusta el renderer y la cámara al tamaño real del canvas. */
   resize(): void {
     const canvas = this.renderer.domElement;
@@ -119,6 +140,8 @@ export class ARScene {
   private frame(time: number): void {
     const w = this.renderer.domElement.clientWidth || 640;
     const h = this.renderer.domElement.clientHeight || 480;
+    const dt = this.lastTime ? (time - this.lastTime) / 1000 : 0;
+    this.lastTime = time;
     const anchor = pickAnchor(this.hands);
 
     // La figura sólo se muestra si hay una elegida y una mano detectada.
@@ -127,9 +150,11 @@ export class ARScene {
     if (this.mesh.visible && anchor) {
       const p = landmarkToScreen(anchor, w, h, this.mirrored);
       this.mesh.position.set(p.x, p.y, 0);
-      this.mesh.scale.setScalar(depthToScale(p.z));
-      const t = time * 0.001;
-      this.mesh.rotation.set(t * 0.9, t * 1.1, t * 0.5);
+      this.mesh.scale.setScalar(depthToScale(p.z) * this.sizeScale);
+      // Acumulamos el ángulo (rad/s) en vez de derivarlo de `time`, así cambiar
+      // la velocidad no produce un salto brusco en la rotación.
+      this.spin += dt * this.rotationSpeed;
+      this.mesh.rotation.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
     }
 
     this.renderer.render(this.scene, this.camera);
