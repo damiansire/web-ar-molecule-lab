@@ -30,6 +30,27 @@ let cameraMessage = "No se pudo acceder a la cámara.";
 let stream: MediaStream | null = null;
 let tracker: HandTracker | null = null;
 let scene: ARScene | null = null;
+let frameActive = false;
+let onResize: (() => void) | null = null;
+
+/**
+ * Libera cámara, worker, escena, loop de cuadros y listeners. Se llama al
+ * volver a una pantalla sin AR (reintento o error), para no dejar la cámara
+ * prendida ni workers/renderers colgando.
+ */
+function cleanup(): void {
+  frameActive = false;
+  stream?.getTracks().forEach((t) => t.stop());
+  stream = null;
+  tracker?.dispose();
+  tracker = null;
+  scene?.dispose();
+  scene = null;
+  if (onResize) {
+    window.removeEventListener("resize", onResize);
+    onResize = null;
+  }
+}
 
 function dispatch(event: AppEvent): void {
   state = transition(state, event);
@@ -43,9 +64,11 @@ function render(): void {
 
   switch (state.status) {
     case "requesting-permission":
+      cleanup();
       renderPermission();
       break;
     case "permission-denied":
+      cleanup();
       renderError(cameraMessage, () => dispatch({ type: "RETRY" }));
       break;
     case "loading-model":
@@ -59,9 +82,8 @@ function render(): void {
       void renderAR();
       break;
     case "error":
-      renderError(state.error ?? "Error inesperado.", () =>
-        dispatch({ type: "RETRY" }),
-      );
+      cleanup();
+      renderError(state.error ?? "Error inesperado.", () => dispatch({ type: "RETRY" }));
       break;
   }
 }
@@ -145,7 +167,7 @@ async function renderAR(): Promise<void> {
     view.root.style.background = c.bgEnabled ? c.bgColor : "#000";
   });
 
-  const onResize = () => scene?.resize();
+  onResize = () => scene?.resize();
   window.addEventListener("resize", onResize);
 
   tracker?.onHands((hands) => scene?.setHands(hands));
@@ -159,21 +181,24 @@ async function renderAR(): Promise<void> {
  * si no está disponible.
  */
 function startFrameLoop(video: HTMLVideoElement): void {
+  frameActive = true;
   const hasRVFC = "requestVideoFrameCallback" in video;
 
+  const schedule = () => {
+    if (!frameActive) return; // `cleanup()` corta el loop
+    if (hasRVFC) {
+      (video as VideoFrameCallbackHost).requestVideoFrameCallback(pump);
+    } else {
+      requestAnimationFrame(pump);
+    }
+  };
+
   const pump = (now: number) => {
+    if (!frameActive) return;
     if (video.readyState >= 2) {
       void tracker?.track(video, now);
     }
     schedule();
-  };
-
-  const schedule = () => {
-    if (hasRVFC) {
-      (video as VideoFrameCallbackHost).requestVideoFrameCallback((now) => pump(now));
-    } else {
-      requestAnimationFrame((now) => pump(now));
-    }
   };
 
   schedule();
@@ -185,15 +210,3 @@ interface VideoFrameCallbackHost {
 }
 
 render();
-
-// Hook de depuración: en el dev server, o en producción con `?debug` en la URL.
-// Permite inspeccionar el estado e inyectar manos sintéticas para probar el
-// render sin una cámara/mano reales.
-if (import.meta.env.DEV || location.search.includes("debug")) {
-  (window as unknown as { __ar: unknown }).__ar = {
-    status: () => state.status,
-    delegate: () => tracker?.delegate ?? null,
-    injectHands: (hands: unknown) => scene?.setHands(hands as never),
-    figure: () => scene?.debugFigure() ?? null,
-  };
-}
