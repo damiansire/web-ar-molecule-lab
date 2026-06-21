@@ -1,8 +1,8 @@
 /**
  * "Saca una foto" del AR: compone el video de fondo (espejado, recorte tipo
  * `cover`) y el canvas 3D en un canvas offscreen, y dispara la descarga del PNG.
- * Requiere que el renderer use `preserveDrawingBuffer: true` para poder leer el
- * canvas WebGL.
+ * El `glCanvas` debe haberse renderizado en este mismo tick (ver
+ * `ARScene.renderForCapture()`): ya no se usa `preserveDrawingBuffer`.
  */
 export function capturePhoto(opts: {
   video: HTMLVideoElement;
