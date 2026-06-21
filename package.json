@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:webgpu": "node scripts/webgpu-smoke.mjs",
+    "smoke:webgpu:chrome": "node scripts/webgpu-smoke-chrome.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

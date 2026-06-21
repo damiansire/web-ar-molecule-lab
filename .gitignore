@@ -4,3 +4,4 @@ dist/
 .DS_Store
 .vite/
 scripts/webgpu-smoke.png
+scripts/webgpu-smoke-chrome-*.png
