@@ -33,9 +33,30 @@ export interface Hand {
 // necesita y limita cuántas veces por segundo agarramos un frame.
 const MIN_DETECT_INTERVAL_MS = 33; // ~30 Hz
 
+// Si un frame en vuelo no recibe `result` en este lapso, asumimos que el worker
+// se perdió el mensaje o murió y reseteamos `busy` para no congelar el tracking.
+export const WORKER_RESULT_TIMEOUT_MS = 2000;
+
+/**
+ * ¿El back-pressure del worker está vencido? Lógica pura del watchdog: dado que
+ * hay un frame en vuelo (`busy`), decide si ya pasó demasiado tiempo desde el
+ * último post como para soltar `busy` y no congelar el tracking para siempre.
+ */
+export function isWorkerBackpressureStale(
+  busy: boolean,
+  now: number,
+  lastPostAt: number,
+  timeoutMs: number = WORKER_RESULT_TIMEOUT_MS,
+): boolean {
+  return busy && now - lastPostAt > timeoutMs;
+}
+
 export class HandTracker {
   private worker: Worker | null = null;
   private busy = false;
+  /** `performance.now()` del último frame posteado al worker (watchdog). */
+  private lastPostAt = 0;
+  private workerDead = false;
   private lastVideoTime = -1;
   private lastPumpAt = 0;
   private _hands: Hand[] = [];
@@ -84,11 +105,32 @@ export class HandTracker {
           this.resultCount++;
         }
       });
+      // Si el worker muere tras el init (OOM de WASM, crash del delegate GPU),
+      // no queremos que `busy` quede `true` para siempre y congele el tracking:
+      // lo marcamos muerto y dejamos de bombearle frames. pump() degrada a
+      // "no detecta" en vez de trabarse; intentamos un fallback síncrono.
+      worker.addEventListener('error', (e: ErrorEvent) => {
+        console.warn('Hand worker murió; intento fallback síncrono.', e.message);
+        this.handleWorkerLoss();
+      });
       this.worker = worker;
     } catch (err) {
       console.warn('Hand worker no disponible; uso detección síncrona.', err);
       await this.initSync();
     }
+  }
+
+  /** Limpia el estado del worker perdido y arranca el fallback síncrono. */
+  private handleWorkerLoss(): void {
+    if (this.workerDead) return;
+    this.workerDead = true;
+    this.busy = false;
+    const w = this.worker;
+    this.worker = null;
+    if (w) { try { w.terminate(); } catch { /* noop */ } }
+    // Re-init síncrono en background; si falla, quedamos sin tracking (mejor que
+    // un freeze): el resto del juego (voz, render) sigue vivo.
+    this.initSync().catch((err) => console.warn('Fallback síncrono falló.', err));
   }
 
   private async initSync(): Promise<void> {
@@ -109,12 +151,19 @@ export class HandTracker {
     if (video.currentTime === this.lastVideoTime) return;
 
     if (this.worker) {
-      if (this.busy) return; // backpressure: un frame en vuelo a la vez
+      if (this.busy) {
+        // Watchdog: si el frame en vuelo no volvió en WORKER_RESULT_TIMEOUT_MS
+        // (result perdido, worker trabado/muerto sin disparar 'error'), soltamos
+        // el back-pressure para no congelar el tracking de forma permanente.
+        if (isWorkerBackpressureStale(this.busy, now, this.lastPostAt)) this.busy = false;
+        else return; // backpressure: un frame en vuelo a la vez
+      }
       const bitmap = this.grabBitmap(video);
       if (!bitmap) return;
       this.lastVideoTime = video.currentTime;
       this.lastPumpAt = now;
       this.busy = true;
+      this.lastPostAt = now;
       this.worker.postMessage({ type: 'frame', bitmap, timestamp: Math.round(now) }, [bitmap]);
       return;
     }
@@ -155,6 +204,18 @@ export class HandTracker {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Libera el worker. Higiene de teardown: se llama al abortar el arranque o
+   * cuando la página se oculta, para no dejar un worker (y su WASM) colgando.
+   */
+  dispose(): void {
+    this.busy = false;
+    const w = this.worker;
+    this.worker = null;
+    if (w) { try { w.terminate(); } catch { /* noop */ } }
+    this.syncLandmarker = null;
   }
 }
 
