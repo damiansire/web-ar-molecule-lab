@@ -32,6 +32,8 @@ export interface ControlsState {
   shadow: boolean;
   /** Dibujar figuras en ambas manos. */
   multiHand: boolean;
+  /** Oclusión: la figura queda por detrás al dar vuelta la mano. */
+  occlusion: boolean;
   /** Vista espejada (selfie). */
   mirrored: boolean;
   /** Si está activo, reemplaza el video de la cámara por un color sólido. */
@@ -52,6 +54,7 @@ const DEFAULTS: ControlsState = {
   edgeColor: "#0b1020",
   shadow: false,
   multiHand: false,
+  occlusion: true,
   mirrored: true,
   bgEnabled: false,
   bgColor: "#101826",
@@ -243,6 +246,7 @@ export class ARControls extends HTMLElement {
     toggleItem("edges", "edges", "Aristas / Edges", "edgeColor", "Color de arista / Edge color");
     toggleItem("shadow", "shadow", "Sombra / Shadow");
     toggleItem("multiHand", "hand", "Dos manos / Two hands");
+    toggleItem("occlusion", "occlusion", "Oclusión (figura detrás) / Occlusion (figure behind)");
     toggleItem("mirrored", "mirror", "Espejo / Mirror");
     toggleItem("bgEnabled", "background", "Fondo / Background", "bgColor", "Color de fondo / Background color");
   }

@@ -28,7 +28,8 @@ export type IconName =
   | "shadow"
   | "hand"
   | "mirror"
-  | "background";
+  | "background"
+  | "occlusion";
 
 export const ICONS: Record<IconName, string> = {
   // --- figuras ---
@@ -69,5 +70,9 @@ export const ICONS: Record<IconName, string> = {
   ),
   background: svg(
     '<rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9.5" r="1.6" fill="currentColor" stroke="none"/><path d="M4 16l5-4 4 3 3-2 4 3"/>',
+  ),
+  // oclusión: una forma por detrás de otra (profundidad)
+  occlusion: svg(
+    '<rect x="10" y="4" width="10" height="10" rx="1.5" fill="currentColor" stroke="none"/><rect x="4" y="10" width="10" height="10" rx="1.5" fill="#1f2937" stroke="currentColor"/>',
   ),
 };

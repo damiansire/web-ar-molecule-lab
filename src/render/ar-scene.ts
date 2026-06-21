@@ -35,9 +35,9 @@ import {
 import type { FigureKind } from "../domain/figures";
 import {
   anchorOf,
-  handFacing,
   handPerspectiveScale,
   landmarkToScreen,
+  palmWinding,
 } from "../domain/hand-tracking";
 import type { NormalizedLandmark } from "../domain/hand-tracking";
 
@@ -45,6 +45,7 @@ const BASE = 120; // tamaño base de la figura en píxeles
 const MAX_FIGURES = 2; // tope de manos simultáneas
 const PREVIEW_SCALE = 0.55; // tamaño de la figura cuando está en la esquina (preview)
 const HAND_GRACE_MS = 500; // tolerancia ante pérdidas breves de la mano (sin parpadear)
+const FACING_DEADZONE = 0.18; // zona muerta de la señal palma/dorso (anti-parpadeo)
 
 function geometryFor(kind: FigureKind): BufferGeometry | null {
   switch (kind) {
@@ -143,6 +144,9 @@ export class ARScene {
 
   private figure: FigureKind = "cube";
   private hands: NormalizedLandmark[][] = [];
+  private handedness: string[] = [];
+  private occlusionEnabled = true;
+  private facingBack = false; // estado con histéresis (palma/dorso) de la mano 0
 
   // Controles ajustables por el usuario.
   private mirrored = true;
@@ -229,8 +233,14 @@ export class ARScene {
     oldEdgeGeo.dispose();
   }
 
-  setHands(hands: NormalizedLandmark[][]): void {
+  setHands(hands: NormalizedLandmark[][], handedness: string[] = []): void {
     this.hands = hands;
+    this.handedness = handedness;
+  }
+
+  /** Activa/desactiva la oclusión (figura por detrás al dar vuelta la mano). */
+  setOcclusion(enabled: boolean): void {
+    this.occlusionEnabled = enabled;
   }
 
   /** Vista espejada (selfie). Debe coincidir con el espejado CSS del video. */
@@ -471,10 +481,20 @@ export class ARScene {
       inst.shadow.scale.set(inst.s, inst.s * 0.4, inst.s);
     }
 
-    // Oclusión: si la mano principal está presente y con el dorso hacia la
-    // cámara (dada vuelta), tapamos la figura con su silueta → queda "por atrás".
+    // Oclusión: si la mano principal está con el dorso hacia la cámara, tapamos
+    // la figura con su silueta → queda "por atrás".
     const hand0 = this.figure !== "none" ? this.hands[0] : undefined;
-    if (hand0 && anchorOf(hand0) && handFacing(hand0, this.mirrored) === "back") {
+    if (hand0 && anchorOf(hand0)) {
+      // Señal de orientación: winding * lateralidad. Histéresis con zona muerta
+      // para no parpadear cuando la mano está casi de canto (señal ~0).
+      const handSign = this.handedness[0] === "Left" ? -1 : 1;
+      const signal = palmWinding(hand0) * handSign;
+      if (signal < -FACING_DEADZONE) this.facingBack = true;
+      else if (signal > FACING_DEADZONE) this.facingBack = false;
+      // dentro de la zona muerta: se conserva el estado anterior
+    }
+
+    if (hand0 && anchorOf(hand0) && this.occlusionEnabled && this.facingBack) {
       this.updateOccluder(hand0, w, h);
     } else {
       this.occluderMesh.visible = false;

@@ -3,7 +3,7 @@ import {
   landmarkToScreen,
   pickAnchor,
   handPerspectiveScale,
-  handFacing,
+  palmWinding,
   ANCHOR_LANDMARK_INDEX,
   WRIST_LANDMARK_INDEX,
   INDEX_MCP_INDEX,
@@ -80,9 +80,7 @@ describe("handPerspectiveScale", () => {
   });
 });
 
-describe("handFacing", () => {
-  // Mano con winding conocido: muñeca en origen, índice a la derecha, meñique
-  // abajo → cross > 0.
+describe("palmWinding", () => {
   const hand = (): NormalizedLandmark[] => {
     const h = Array.from({ length: 21 }, () => lm(0, 0));
     h[WRIST_LANDMARK_INDEX] = lm(0, 0);
@@ -91,23 +89,30 @@ describe("handFacing", () => {
     return h;
   };
 
-  it("se invierte al espejar la vista", () => {
-    const sinEspejo = handFacing(hand(), false);
-    const conEspejo = handFacing(hand(), true);
-    expect(sinEspejo).not.toBe(conEspejo);
-  });
-
-  it("se invierte al dar vuelta la mano (winding opuesto)", () => {
+  it("cambia de signo al dar vuelta la mano (índice y meñique invertidos)", () => {
     const flipped = hand();
     [flipped[INDEX_MCP_INDEX], flipped[PINKY_MCP_INDEX]] = [
       flipped[PINKY_MCP_INDEX],
       flipped[INDEX_MCP_INDEX],
     ];
-    expect(handFacing(hand(), false)).not.toBe(handFacing(flipped, false));
+    expect(Math.sign(palmWinding(hand()))).toBe(-Math.sign(palmWinding(flipped)));
   });
 
-  it("sin mano válida → 'front'", () => {
-    expect(handFacing(undefined, false)).toBe("front");
-    expect(handFacing([lm(0, 0)], false)).toBe("front");
+  it("queda en el rango [-1, 1]", () => {
+    const w = palmWinding(hand());
+    expect(Math.abs(w)).toBeLessThanOrEqual(1);
+    expect(Math.abs(w)).toBeGreaterThan(0);
+  });
+
+  it("≈0 cuando los puntos de la palma son casi colineales (mano de canto)", () => {
+    const edge = hand();
+    edge[INDEX_MCP_INDEX] = lm(1, 0.01);
+    edge[PINKY_MCP_INDEX] = lm(0.5, 0.005);
+    expect(Math.abs(palmWinding(edge))).toBeLessThan(0.2);
+  });
+
+  it("sin mano válida → 0", () => {
+    expect(palmWinding(undefined)).toBe(0);
+    expect(palmWinding([lm(0, 0)])).toBe(0);
   });
 });
