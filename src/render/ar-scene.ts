@@ -74,6 +74,8 @@ import {
 } from "../domain/placement";
 import { convexHull, fanTriangulate, type Pt } from "../domain/occluder";
 import { Vec3Smoother } from "../domain/smoothing";
+import type { ExperienceKind } from "../domain/experiences";
+import { createExperience, type Experience, type ExperienceContext } from "./experiences";
 
 const BASE = 120; // tamaño base de la figura en píxeles
 const MAX_FIGURES = 16; // tope de figuras simultáneas (InstancedMesh: 1 draw call)
@@ -172,6 +174,23 @@ export class ARScene {
   private shadowEnabled = false;
   private multiHand = false;
   private running = false;
+
+  // Experiencia creativa activa (null = modo "figuras" clásico).
+  private experienceKind: ExperienceKind = "figuras";
+  private experience: Experience | null = null;
+  private currentColor = "#f45e61";
+  private timeAcc = 0; // tiempo acumulado (s) para animar las experiencias
+  private onHud: ((text: string | null) => void) | null = null;
+  // Contexto reusado por frame (alloc-free) que se pasa a la experiencia.
+  private expCtx: ExperienceContext = {
+    hands: [],
+    width: 0,
+    height: 0,
+    mirrored: true,
+    dt: 0,
+    time: 0,
+    color: "#f45e61",
+  };
 
   // Scratch reusable del hot loop (alloc-free).
   private mat = new Matrix4();
@@ -362,6 +381,36 @@ export class ARScene {
   setColor(color: string): void {
     this.material.color.set(color);
     this.colorUniform.value.set(color);
+    this.currentColor = color; // también tiñe la experiencia activa
+  }
+
+  /**
+   * Cambia la experiencia activa. "figuras" vuelve al modo clásico (sin
+   * Experience); el resto crea el efecto, lo agrega a la escena y dispone el
+   * anterior. Idempotente si ya está en ese modo.
+   */
+  setExperience(kind: ExperienceKind): void {
+    if (kind === this.experienceKind) return;
+    this.experienceKind = kind;
+    if (this.experience) {
+      this.scene.remove(this.experience.object);
+      this.experience.dispose();
+      this.experience = null;
+    }
+    const exp = createExperience(kind);
+    if (exp) {
+      this.experience = exp;
+      this.scene.add(exp.object);
+    } else {
+      // Volvemos a figuras: re-mostrar el InstancedMesh de figuras.
+      this.figures.visible = true;
+    }
+    this.onHud?.(null);
+  }
+
+  /** Registra un callback para el HUD del modo (ej. el puntaje). */
+  setHudListener(cb: (text: string | null) => void): void {
+    this.onHud = cb;
   }
 
   /**
@@ -504,6 +553,32 @@ export class ARScene {
     const h = this.renderer.domElement.clientHeight || 480;
     const dt = this.lastTime ? (time - this.lastTime) / 1000 : 0;
     this.lastTime = time;
+    this.timeAcc += dt;
+
+    // Modo experiencia creativa: ocultamos el pipeline de figuras y delegamos el
+    // frame en la experiencia activa (que maneja sus propios objetos en la escena).
+    if (this.experience) {
+      if (this.figures.visible) {
+        this.figures.visible = false;
+        for (const e of this.edges) e.visible = false;
+      }
+      this.shadows.visible = false;
+      this.occluderMesh.visible = false;
+      const ctx = this.expCtx;
+      ctx.hands = this.hands;
+      ctx.width = w;
+      ctx.height = h;
+      ctx.mirrored = this.mirrored;
+      ctx.dt = dt;
+      ctx.time = this.timeAcc;
+      ctx.color = this.currentColor;
+      this.experience.update(ctx);
+      this.onHud?.(this.experience.hud());
+      this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    if (!this.figures.visible) this.figures.visible = true;
+
     // Acumulamos el ángulo (rad/s) en vez de derivarlo de `time`, así cambiar
     // la velocidad no produce un salto brusco en la rotación.
     this.spin += dt * this.rotationSpeed;
@@ -656,6 +731,11 @@ export class ARScene {
 
   dispose(): void {
     this.stop();
+    if (this.experience) {
+      this.scene.remove(this.experience.object);
+      this.experience.dispose();
+      this.experience = null;
+    }
     this.geo.dispose();
     this.edgeGeo.dispose();
     this.shadowGeo.dispose();
