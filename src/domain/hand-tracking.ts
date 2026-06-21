@@ -88,13 +88,19 @@ export function pickAnchor(
  * base-meñique), en el rango [-1, 1]. Es ~sen(ángulo) de apertura proyectado:
  *
  *  - el SIGNO indica la orientación (palma vs dorso) y se invierte al dar vuelta
- *    la mano (depende también de si es izquierda o derecha → se resuelve afuera
- *    con la lateralidad);
+ *    la mano;
  *  - la MAGNITUD indica confianza: ~0 cuando la mano está de canto (ambiguo).
  *
  * Devuelve 0 si la mano no es válida. No depende del espejado de la pantalla
- * (la orientación física es invariante al espejo): el signo absoluto se decide
- * con la lateralidad de MediaPipe.
+ * (la orientación física es invariante al espejo).
+ *
+ * OJO con la lateralidad: para una mano dada el signo es estable, pero NO es
+ * invariante a izquierda/derecha (el triángulo muñeca→índice→meñique gira al
+ * revés en la otra mano). Esta función devuelve el winding CRUDO y no resuelve
+ * ese signo absoluto: para hacerlo haría falta la lateralidad (handedness) de
+ * MediaPipe, que el único consumidor (ar-scene) decidió NO usar para evitar el
+ * parpadeo Left↔Right. En consecuencia, palma/dorso quedan calibrados para la
+ * mano DERECHA del usuario y se invierten con la mano izquierda.
  */
 export function palmWinding(hand: readonly NormalizedLandmark[] | undefined): number {
   const wrist = hand?.[WRIST_LANDMARK_INDEX];

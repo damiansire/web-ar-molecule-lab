@@ -20,8 +20,10 @@ _(requiere cámara; el video nunca sale de tu dispositivo)_
 Elegir entre 6 figuras 3D que siguen la mano (con **perspectiva**: cerca = más
 grande), ajustar tamaño/velocidad/opacidad/material/color, mostrar aristas o
 wireframe, sombra, **dos manos** a la vez, fondo de color, **oclusión** (la
-figura queda detrás al dar vuelta la mano) y **sacar una foto** (descarga un
-PNG). Cuando no hay mano, la figura queda de preview en la esquina.
+figura queda detrás al dar vuelta la mano —_calibrada para la mano derecha_: con
+la mano izquierda la oclusión se dispara con la palma en vez del dorso) y **sacar
+una foto** (descarga un PNG). Cuando no hay mano, la figura queda de preview en
+la esquina.
 
 ## Cómo funciona
 
