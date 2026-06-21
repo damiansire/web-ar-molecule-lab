@@ -36,6 +36,33 @@ export function matchElement(transcript: string): ElementSymbol | null {
   return found;
 }
 
+/**
+ * Mapea un código de idioma (BCP-47, p.ej. `"en"`, `"es-AR"`) a un locale válido
+ * para SpeechRecognition. Si ya trae región (`en-US`), se respeta; si es solo el
+ * idioma (`en`), se completa con una región por defecto. Para idiomas que no
+ * soportamos cae a `en-US`, alineado con la UI (100% inglés).
+ */
+export function resolveLang(raw: string | null | undefined): string {
+  const tag = (raw ?? '').trim().toLowerCase();
+  if (!tag) return 'en-US';
+  const base = tag.split('-')[0];
+  if (tag.includes('-')) {
+    // Ya tiene región: normalizamos a "xx-YY".
+    const [lang, region] = tag.split('-');
+    return `${lang}-${region.toUpperCase()}`;
+  }
+  if (base === 'es') return 'es-ES';
+  if (base === 'en') return 'en-US';
+  return 'en-US';
+}
+
+/** Idioma efectivo de la UI → locale del reconocedor. */
+function defaultLang(): string {
+  const fromHtml = typeof document !== 'undefined' ? document.documentElement.lang : '';
+  const fromNav = typeof navigator !== 'undefined' ? navigator.language : '';
+  return resolveLang(fromHtml || fromNav);
+}
+
 // --- Web Speech API (tipado mínimo: no está en lib.dom estándar) -------------
 interface SpeechAlternativeLike { transcript: string }
 interface SpeechResultLike { 0: SpeechAlternativeLike; length: number }
@@ -76,8 +103,13 @@ export class VoiceRecognizer {
   /**
    * Empieza a escuchar. Llama `onElement` cuando se nombra un elemento.
    * Devuelve false si no hay soporte o no pudo arrancar.
+   *
+   * `lang` por defecto se deriva del idioma efectivo de la UI: la interfaz es
+   * inglés (`<html lang="en">`) y el hint dice "say an element", así que el ASR
+   * debe escuchar en inglés o no transcribe "oxygen"/"sodium". Si se pasa `lang`
+   * explícito, manda ese.
    */
-  start(onElement: (s: ElementSymbol) => void, lang = 'es-ES'): boolean {
+  start(onElement: (s: ElementSymbol) => void, lang = defaultLang()): boolean {
     const Ctor = getCtor();
     if (!Ctor) return false;
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchElement } from './voice';
+import { matchElement, resolveLang } from './voice';
 
 describe('matchElement', () => {
   it('reconoce nombres en español (con y sin acento)', () => {
@@ -38,5 +38,28 @@ describe('matchElement', () => {
   it('si se nombran varios, gana el último mencionado', () => {
     expect(matchElement('oxígeno hidrógeno')).toBe('H');
     expect(matchElement('primero cloro y después sodio')).toBe('Na');
+  });
+});
+
+describe('resolveLang', () => {
+  it('alinea con la UI inglesa por defecto (vacío → en-US)', () => {
+    expect(resolveLang('')).toBe('en-US');
+    expect(resolveLang(null)).toBe('en-US');
+    expect(resolveLang(undefined)).toBe('en-US');
+  });
+
+  it('completa un idioma sin región', () => {
+    expect(resolveLang('en')).toBe('en-US');
+    expect(resolveLang('es')).toBe('es-ES');
+  });
+
+  it('respeta y normaliza un locale con región', () => {
+    expect(resolveLang('en-GB')).toBe('en-GB');
+    expect(resolveLang('es-ar')).toBe('es-AR');
+    expect(resolveLang('EN-us')).toBe('en-US');
+  });
+
+  it('idioma no soportado cae a inglés (la UI es inglés)', () => {
+    expect(resolveLang('fr')).toBe('en-US');
   });
 });
