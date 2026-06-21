@@ -30,7 +30,13 @@ export type IconName =
   | "mirror"
   | "background"
   | "occlusion"
-  | "camera";
+  | "camera"
+  // --- experiencias creativas ---
+  | "figuras"
+  | "dibujo"
+  | "atrapar"
+  | "galaxia"
+  | "lasers";
 
 export const ICONS: Record<IconName, string> = {
   // --- figuras ---
@@ -90,5 +96,27 @@ export const ICONS: Record<IconName, string> = {
   ),
   camera: svg(
     '<path d="M3 8a2 2 0 0 1 2-2h2l1.5-2h7L19 6h0a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.5"/>',
+  ),
+
+  // --- experiencias creativas ---
+  // figuras: cuadrado + círculo superpuestos (formas 3D)
+  figuras: svg(
+    '<rect x="4" y="4" width="11" height="11" rx="1.5"/><circle cx="15" cy="15" r="5"/>',
+  ),
+  // dibujo: lápiz
+  dibujo: svg(
+    '<path d="M4 20l1-4 11-11 3 3-11 11z"/><path d="M14.5 6.5l3 3"/><line x1="4" y1="20" x2="5" y2="16"/>',
+  ),
+  // atrapar: circulitos cayendo a una "cuenca"
+  atrapar: svg(
+    '<circle cx="8" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="15" cy="7" r="1.6" fill="currentColor" stroke="none"/><circle cx="11" cy="9" r="1.3" fill="currentColor" stroke="none"/><path d="M4 13a8 6 0 0 0 16 0"/>',
+  ),
+  // galaxia: estrella + chispas
+  galaxia: svg(
+    '<path d="M11 2l1.6 4.6L17 8l-4.4 1.4L11 14l-1.6-4.6L5 8l4.4-1.4z" fill="currentColor" stroke="none"/><circle cx="18" cy="16" r="1.2" fill="currentColor" stroke="none"/><circle cx="6" cy="17" r="1" fill="currentColor" stroke="none"/>',
+  ),
+  // lasers: nodos conectados por rayos
+  lasers: svg(
+    '<circle cx="6" cy="6" r="1.7"/><circle cx="18" cy="6" r="1.7"/><circle cx="6" cy="18" r="1.7"/><circle cx="18" cy="18" r="1.7"/><path d="M7.3 7.3l9.4 9.4M16.7 7.3l-9.4 9.4"/>',
   ),
 };

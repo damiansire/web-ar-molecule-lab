@@ -13,6 +13,7 @@ import {
   type AppEvent,
 } from "./domain/app-state";
 import { DEFAULT_FIGURE, type FigureKind } from "./domain/figures";
+import { experienceHint, type ExperienceKind } from "./domain/experiences";
 import { requestCamera, CameraError } from "./camera/camera";
 import { HandTracker } from "./inference/hand-tracker";
 import type { ARScene } from "./render/ar-scene";
@@ -166,6 +167,35 @@ async function renderAR(): Promise<void> {
 
   view.selector.addEventListener("figure-change", (e) => {
     scene?.setFigure((e as CustomEvent<FigureKind>).detail);
+  });
+
+  // Cartel de instrucción del modo (toast central que se desvanece solo).
+  let hintTimer = 0;
+  const showHint = (text: string): void => {
+    if (!text) return;
+    view.hint.textContent = text;
+    view.hint.classList.add("show");
+    clearTimeout(hintTimer);
+    hintTimer = window.setTimeout(() => view.hint.classList.remove("show"), 3500);
+  };
+
+  // HUD de puntaje: la experiencia activa decide qué mostrar (null = ocultar).
+  scene.setHudListener((text) => {
+    view.hud.hidden = text === null;
+    view.hud.textContent = text ?? "";
+  });
+
+  // Cambio de experiencia creativa: activa el modo, muestra/oculta el selector de
+  // figuras (sólo relevante en "figuras") y anuncia la instrucción del modo.
+  view.experience.addEventListener("experience-change", (e) => {
+    const kind = (e as CustomEvent<ExperienceKind>).detail;
+    scene?.setExperience(kind);
+    const figuras = kind === "figuras";
+    // Los sliders/toggles de material sólo aplican a las figuras 3D: fuera de ese
+    // modo, ocultamos tanto el selector de figuras como el panel de controles.
+    view.selector.style.display = figuras ? "" : "none";
+    view.controls.style.display = figuras ? "" : "none";
+    showHint(experienceHint(kind));
   });
 
   view.controls.addEventListener("controls-change", (e) => {
