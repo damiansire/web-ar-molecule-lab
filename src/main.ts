@@ -150,7 +150,9 @@ async function start(chosen: Mode) {
     requestAnimationFrame(loop);
 
     // Escucha de voz (pide permiso de micrófono; si falla, el juego sigue por gestos).
-    voiceListening = voice.start(giveElement);
+    // Solo intentamos si el navegador soporta SpeechRecognition: así no pedimos
+    // micrófono en vano ni mostramos el hint "say an element" donde no aplica.
+    voiceListening = VoiceRecognizer.supported && voice.start(giveElement);
   } catch (err) {
     console.error(err);
     // Si algo falló DESPUÉS de obtener la cámara (modelo no listo, AudioContext…),

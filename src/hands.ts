@@ -219,9 +219,7 @@ export class HandTracker {
   }
 }
 
-/** Índices de landmarks que usamos. */
+/** Índices de landmarks que usamos (solo la punta del índice por ahora). */
 export const LM = {
-  WRIST: 0,
-  THUMB_TIP: 4,
   INDEX_TIP: 8,
 } as const;

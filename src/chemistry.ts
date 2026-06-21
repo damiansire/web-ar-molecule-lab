@@ -173,11 +173,6 @@ export const MOLECULES: Molecule[] = [
   },
 ];
 
-/** Acceso rápido por fórmula. */
-export const MOLECULE_BY_FORMULA: Record<string, Molecule> = Object.fromEntries(
-  MOLECULES.map((m) => [m.formula, m]),
-);
-
 // ---------------------------------------------------------------------------
 // Combinación por estequiometría
 // ---------------------------------------------------------------------------
