@@ -36,6 +36,7 @@ import type { NormalizedLandmark } from "../domain/hand-tracking";
 const BASE = 120; // tamaño base de la figura en píxeles
 const MAX_FIGURES = 2; // tope de manos simultáneas
 const PREVIEW_SCALE = 0.55; // tamaño de la figura cuando está en la esquina (preview)
+const HAND_GRACE_MS = 500; // tolerancia ante pérdidas breves de la mano (sin parpadear)
 
 function geometryFor(kind: FigureKind): BufferGeometry | null {
   switch (kind) {
@@ -65,7 +66,12 @@ interface FigureInstance {
   y: number;
   s: number;
   primed: boolean; // true una vez que tiene una posición real (para no interpolar desde 0,0)
-  parked: boolean; // true cuando está en la esquina (preview, sin mano)
+  // Última posición/escala conocida de la mano (para sostener ante pérdidas breves).
+  hx: number;
+  hy: number;
+  hs: number;
+  lastSeen: number; // timestamp (ms) de la última detección de mano
+  everSeen: boolean;
 }
 
 export class ARScene {
@@ -135,7 +141,11 @@ export class ARScene {
         y: 0,
         s: 1,
         primed: false,
-        parked: false,
+        hx: 0,
+        hy: 0,
+        hs: 1,
+        lastSeen: -Infinity,
+        everSeen: false,
       });
     }
 
@@ -235,6 +245,12 @@ export class ARScene {
     this.multiHand = enabled;
   }
 
+  /** Estado de la primera figura (sólo para depuración/tests manuales). */
+  debugFigure(): { x: number; y: number; visible: boolean } | null {
+    const i = this.instances[0];
+    return i ? { x: Math.round(i.x), y: Math.round(i.y), visible: i.mesh.visible } : null;
+  }
+
   /** Ajusta el renderer y la cámara al tamaño real del canvas. */
   resize(): void {
     const canvas = this.renderer.domElement;
@@ -279,28 +295,47 @@ export class ARScene {
       const hand = allow ? this.hands[i] : undefined;
       const anchor = anchorOf(hand);
 
+      // Sin figura elegida o instancia no usada: ocultar.
+      if (!allow) {
+        inst.mesh.visible = false;
+        inst.shadow.visible = false;
+        inst.primed = false;
+        continue;
+      }
+
+      // Si hay mano, actualizamos su última posición/escala conocidas.
+      if (anchor) {
+        const p = landmarkToScreen(anchor, w, h, this.mirrored);
+        inst.hx = p.x;
+        inst.hy = p.y;
+        // Perspectiva: tamaño según la mano (cerca = grande, lejos = chica),
+        // por el tamaño elegido en el slider.
+        inst.hs = handPerspectiveScale(hand, w, h) * this.sizeScale;
+        inst.lastSeen = time;
+        inst.everSeen = true;
+      }
+
+      const held = inst.everSeen && time - inst.lastSeen < HAND_GRACE_MS;
+
+      // Objetivo de la figura. Nunca desaparece de golpe: si la mano se va,
+      // primero se sostiene (gracia) y luego se desliza hacia la esquina.
       let tx: number;
       let ty: number;
       let ts: number;
-      let parked: boolean;
-
-      if (anchor) {
-        const p = landmarkToScreen(anchor, w, h, this.mirrored);
-        tx = p.x;
-        ty = p.y;
-        // Perspectiva: tamaño según la mano (cerca = grande, lejos = chica),
-        // por el tamaño elegido en el slider.
-        ts = handPerspectiveScale(hand, w, h) * this.sizeScale;
-        parked = false;
-      } else if (i === 0 && this.figure !== "none") {
-        // Sin mano: la primera figura queda como preview en la esquina superior
-        // derecha, para ver cómo se ven los ajustes actuales.
+      if (anchor || held) {
+        // Sobre la mano (o sosteniendo su última posición ante una pérdida breve).
+        tx = inst.hx;
+        ty = inst.hy;
+        ts = inst.hs;
+      } else if (i === 0) {
+        // Mano ausente: preview en la esquina superior derecha (se desliza hacia
+        // allá, no desaparece). Margen amplio para que no se salga al rotar.
         ts = PREVIEW_SCALE * this.sizeScale;
-        const margin = BASE * 0.55 * ts + 16;
+        const margin = BASE * 0.9 * ts + 26;
         tx = w - margin;
         ty = margin;
-        parked = true;
       } else {
+        // Segunda figura sin su mano: se oculta (no hay segunda esquina).
         inst.mesh.visible = false;
         inst.shadow.visible = false;
         inst.primed = false;
@@ -310,9 +345,9 @@ export class ARScene {
       inst.mesh.visible = true; // las aristas (hijas) heredan la visibilidad
       inst.shadow.visible = this.shadowEnabled;
 
-      // Snap al primer frame o al cambiar de modo (mano <-> esquina), para no
-      // cruzar la pantalla deslizándose.
-      if (!inst.primed || inst.parked !== parked) {
+      // Snap sólo en el primer frame (para no deslizar desde 0,0); después
+      // siempre interpolamos → transición continua mano <-> esquina.
+      if (!inst.primed) {
         inst.x = tx;
         inst.y = ty;
         inst.s = ts;
@@ -322,7 +357,6 @@ export class ARScene {
         inst.y += (ty - inst.y) * smooth;
         inst.s += (ts - inst.s) * smooth;
       }
-      inst.parked = parked;
 
       inst.mesh.position.set(inst.x, inst.y, 0);
       inst.mesh.scale.setScalar(inst.s);

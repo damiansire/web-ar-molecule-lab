@@ -193,5 +193,6 @@ if (import.meta.env.DEV || location.search.includes("debug")) {
     status: () => state.status,
     delegate: () => tracker?.delegate ?? null,
     injectHands: (hands: unknown) => scene?.setHands(hands as never),
+    figure: () => scene?.debugFigure() ?? null,
   };
 }
