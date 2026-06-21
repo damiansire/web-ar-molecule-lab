@@ -98,7 +98,10 @@ function detect(bitmap: ImageBitmap, timestamp: number): void {
   }
   try {
     const result = landmarker.detectForVideo(bitmap, timestamp);
-    post({ type: "result", timestamp, hands: result.landmarks ?? [] });
+    const handedness: string[] = (result.handedness ?? []).map(
+      (h: { categoryName?: string }[]) => h[0]?.categoryName ?? "Right",
+    );
+    post({ type: "result", timestamp, hands: result.landmarks ?? [], handedness });
   } finally {
     // Liberamos el bitmap siempre, haya o no detección, para no perder memoria.
     bitmap.close();

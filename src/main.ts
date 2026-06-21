@@ -135,6 +135,7 @@ async function renderAR(): Promise<void> {
     scene?.setEdgeColor(c.edgeColor);
     scene?.setShadow(c.shadow);
     scene?.setMultiHand(c.multiHand);
+    scene?.setOcclusion(c.occlusion);
     // El espejado del overlay (escena) debe coincidir con el del <video> (CSS).
     scene?.setMirrored(c.mirrored);
     view.video.style.transform = c.mirrored ? "scaleX(-1)" : "none";
@@ -147,7 +148,7 @@ async function renderAR(): Promise<void> {
   const onResize = () => scene?.resize();
   window.addEventListener("resize", onResize);
 
-  tracker?.onHands((hands) => scene?.setHands(hands));
+  tracker?.onHands((f) => scene?.setHands(f.hands, f.handedness));
 
   startFrameLoop(view.video);
 }

@@ -84,28 +84,31 @@ export function pickAnchor(
  * resultado se acota para que la figura no desaparezca ni explote.
  */
 /**
- * Orientación de la mano respecto a la cámara, según el sentido de giro
- * (winding) del triángulo muñeca→base-índice→base-meñique. Al dar vuelta la
- * mano, ese sentido se invierte. Si la vista está espejada (selfie), se corrige.
+ * "Winding" normalizado del triángulo de la palma (muñeca→base-índice→
+ * base-meñique), en el rango [-1, 1]. Es ~sen(ángulo) de apertura proyectado:
  *
- * "front" = palma hacia la cámara (figura por delante);
- * "back" = dorso hacia la cámara (figura por detrás / ocluida).
+ *  - el SIGNO indica la orientación (palma vs dorso) y se invierte al dar vuelta
+ *    la mano (depende también de si es izquierda o derecha → se resuelve afuera
+ *    con la lateralidad);
+ *  - la MAGNITUD indica confianza: ~0 cuando la mano está de canto (ambiguo).
+ *
+ * Devuelve 0 si la mano no es válida. No depende del espejado de la pantalla
+ * (la orientación física es invariante al espejo): el signo absoluto se decide
+ * con la lateralidad de MediaPipe.
  */
-export function handFacing(
-  hand: readonly NormalizedLandmark[] | undefined,
-  mirrored: boolean,
-): "front" | "back" {
+export function palmWinding(hand: readonly NormalizedLandmark[] | undefined): number {
   const wrist = hand?.[WRIST_LANDMARK_INDEX];
   const index = hand?.[INDEX_MCP_INDEX];
   const pinky = hand?.[PINKY_MCP_INDEX];
-  if (!wrist || !index || !pinky) return "front";
+  if (!wrist || !index || !pinky) return 0;
   const ax = index.x - wrist.x;
   const ay = index.y - wrist.y;
   const bx = pinky.x - wrist.x;
   const by = pinky.y - wrist.y;
-  let cross = ax * by - ay * bx;
-  if (mirrored) cross = -cross;
-  return cross > 0 ? "back" : "front";
+  const cross = ax * by - ay * bx;
+  const la = Math.hypot(ax, ay);
+  const lb = Math.hypot(bx, by);
+  return la && lb ? cross / (la * lb) : 0;
 }
 
 export function handPerspectiveScale(
