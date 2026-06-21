@@ -3,8 +3,11 @@ import {
   landmarkToScreen,
   pickAnchor,
   handPerspectiveScale,
+  handFacing,
   ANCHOR_LANDMARK_INDEX,
   WRIST_LANDMARK_INDEX,
+  INDEX_MCP_INDEX,
+  PINKY_MCP_INDEX,
   SPAN_REFERENCE,
   type NormalizedLandmark,
 } from "./hand-tracking";
@@ -74,5 +77,37 @@ describe("handPerspectiveScale", () => {
   it("sin mano válida → escala neutra (1)", () => {
     expect(handPerspectiveScale(undefined, 480, 480)).toBe(1);
     expect(handPerspectiveScale([lm(0, 0)], 480, 480)).toBe(1);
+  });
+});
+
+describe("handFacing", () => {
+  // Mano con winding conocido: muñeca en origen, índice a la derecha, meñique
+  // abajo → cross > 0.
+  const hand = (): NormalizedLandmark[] => {
+    const h = Array.from({ length: 21 }, () => lm(0, 0));
+    h[WRIST_LANDMARK_INDEX] = lm(0, 0);
+    h[INDEX_MCP_INDEX] = lm(1, 0);
+    h[PINKY_MCP_INDEX] = lm(0, 1);
+    return h;
+  };
+
+  it("se invierte al espejar la vista", () => {
+    const sinEspejo = handFacing(hand(), false);
+    const conEspejo = handFacing(hand(), true);
+    expect(sinEspejo).not.toBe(conEspejo);
+  });
+
+  it("se invierte al dar vuelta la mano (winding opuesto)", () => {
+    const flipped = hand();
+    [flipped[INDEX_MCP_INDEX], flipped[PINKY_MCP_INDEX]] = [
+      flipped[PINKY_MCP_INDEX],
+      flipped[INDEX_MCP_INDEX],
+    ];
+    expect(handFacing(hand(), false)).not.toBe(handFacing(flipped, false));
+  });
+
+  it("sin mano válida → 'front'", () => {
+    expect(handFacing(undefined, false)).toBe("front");
+    expect(handFacing([lm(0, 0)], false)).toBe("front");
   });
 });

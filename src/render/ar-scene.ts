@@ -11,11 +11,14 @@
 import {
   AmbientLight,
   BoxGeometry,
+  BufferAttribute,
   BufferGeometry,
   CircleGeometry,
   ConeGeometry,
   CylinderGeometry,
   DirectionalLight,
+  DoubleSide,
+  DynamicDrawUsage,
   EdgesGeometry,
   LineBasicMaterial,
   LineSegments,
@@ -30,7 +33,12 @@ import {
   WebGLRenderer,
 } from "three";
 import type { FigureKind } from "../domain/figures";
-import { anchorOf, handPerspectiveScale, landmarkToScreen } from "../domain/hand-tracking";
+import {
+  anchorOf,
+  handFacing,
+  handPerspectiveScale,
+  landmarkToScreen,
+} from "../domain/hand-tracking";
 import type { NormalizedLandmark } from "../domain/hand-tracking";
 
 const BASE = 120; // tamaño base de la figura en píxeles
@@ -55,6 +63,35 @@ function geometryFor(kind: FigureKind): BufferGeometry | null {
     case "none":
       return null;
   }
+}
+
+interface Pt {
+  x: number;
+  y: number;
+}
+
+/** Envolvente convexa (monotone chain), CCW. Para la silueta del oclusor. */
+function convexHull(points: Pt[]): Pt[] {
+  const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+  if (pts.length < 3) return pts;
+  const cross = (o: Pt, a: Pt, b: Pt) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower: Pt[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0)
+      lower.pop();
+    lower.push(p);
+  }
+  const upper: Pt[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0)
+      upper.pop();
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
 }
 
 interface FigureInstance {
@@ -96,6 +133,13 @@ export class ARScene {
   private edgeGeo: EdgesGeometry;
   private shadowGeo = new CircleGeometry(BASE * 0.55, 40);
   private instances: FigureInstance[] = [];
+
+  // Oclusor: silueta de la mano que sólo escribe profundidad (sin color), para
+  // esconder la figura "por detrás" cuando el dorso de la mano da a la cámara.
+  private occluderMesh: Mesh;
+  private occluderPos = new Float32Array(21 * 3);
+  private occluderIdx = new Uint16Array((21 - 2) * 3);
+  private occluderGeo = new BufferGeometry();
 
   private figure: FigureKind = "cube";
   private hands: NormalizedLandmark[][] = [];
@@ -148,6 +192,21 @@ export class ARScene {
         everSeen: false,
       });
     }
+
+    // Oclusor: malla dinámica (solo profundidad). Se dibuja primero y "tapa" la
+    // figura que quede detrás, dejando ver el video (la mano) por encima.
+    const posAttr = new BufferAttribute(this.occluderPos, 3);
+    posAttr.setUsage(DynamicDrawUsage);
+    this.occluderGeo.setAttribute("position", posAttr);
+    this.occluderGeo.setIndex(new BufferAttribute(this.occluderIdx, 1));
+    // DoubleSide: la silueta puede quedar con winding invertido (pantalla Y
+    // hacia abajo); sin esto se descartaría por backface culling y no ocluiría.
+    const occluderMat = new MeshBasicMaterial({ colorWrite: false, side: DoubleSide });
+    this.occluderMesh = new Mesh(this.occluderGeo, occluderMat);
+    this.occluderMesh.frustumCulled = false;
+    this.occluderMesh.renderOrder = -1; // se dibuja antes que las figuras
+    this.occluderMesh.visible = false;
+    this.scene.add(this.occluderMesh);
 
     this.resize();
   }
@@ -245,10 +304,56 @@ export class ARScene {
     this.multiHand = enabled;
   }
 
+  /**
+   * Actualiza el oclusor con la silueta (envolvente convexa) de la mano, en una
+   * profundidad por delante de la figura, para que ésta quede tapada.
+   */
+  private updateOccluder(hand: NormalizedLandmark[], w: number, h: number): void {
+    const sp: Pt[] = [];
+    for (const lm of hand) {
+      const p = landmarkToScreen(lm, w, h, this.mirrored);
+      sp.push({ x: p.x, y: p.y });
+    }
+    const hull = convexHull(sp);
+    const n = hull.length;
+    if (n < 3) {
+      this.occluderMesh.visible = false;
+      return;
+    }
+    for (let i = 0; i < n; i++) {
+      this.occluderPos[i * 3] = hull[i].x;
+      this.occluderPos[i * 3 + 1] = hull[i].y;
+      this.occluderPos[i * 3 + 2] = 10; // por delante de la figura (z=0)
+    }
+    let t = 0;
+    for (let k = 1; k < n - 1; k++) {
+      this.occluderIdx[t++] = 0;
+      this.occluderIdx[t++] = k;
+      this.occluderIdx[t++] = k + 1;
+    }
+    (this.occluderGeo.getAttribute("position") as BufferAttribute).needsUpdate = true;
+    const idx = this.occluderGeo.getIndex();
+    if (idx) idx.needsUpdate = true;
+    this.occluderGeo.setDrawRange(0, t);
+    this.occluderMesh.visible = true;
+  }
+
   /** Estado de la primera figura (sólo para depuración/tests manuales). */
-  debugFigure(): { x: number; y: number; visible: boolean } | null {
+  debugFigure(): {
+    x: number;
+    y: number;
+    visible: boolean;
+    occluding: boolean;
+  } | null {
     const i = this.instances[0];
-    return i ? { x: Math.round(i.x), y: Math.round(i.y), visible: i.mesh.visible } : null;
+    return i
+      ? {
+          x: Math.round(i.x),
+          y: Math.round(i.y),
+          visible: i.mesh.visible,
+          occluding: this.occluderMesh.visible,
+        }
+      : null;
   }
 
   /** Ajusta el renderer y la cámara al tamaño real del canvas. */
@@ -366,6 +471,15 @@ export class ARScene {
       inst.shadow.scale.set(inst.s, inst.s * 0.4, inst.s);
     }
 
+    // Oclusión: si la mano principal está presente y con el dorso hacia la
+    // cámara (dada vuelta), tapamos la figura con su silueta → queda "por atrás".
+    const hand0 = this.figure !== "none" ? this.hands[0] : undefined;
+    if (hand0 && anchorOf(hand0) && handFacing(hand0, this.mirrored) === "back") {
+      this.updateOccluder(hand0, w, h);
+    } else {
+      this.occluderMesh.visible = false;
+    }
+
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -374,6 +488,8 @@ export class ARScene {
     this.geo.dispose();
     this.edgeGeo.dispose();
     this.shadowGeo.dispose();
+    this.occluderGeo.dispose();
+    (this.occluderMesh.material as MeshBasicMaterial).dispose();
     this.material.dispose();
     this.edgeMaterial.dispose();
     this.shadowMaterial.dispose();
