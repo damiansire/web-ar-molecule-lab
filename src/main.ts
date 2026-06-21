@@ -53,13 +53,32 @@ window.addEventListener('resize', resize);
 resize();
 
 // ---------------------------------------------------------------------------
-// Precarga del modelo (en paralelo con el intro)
+// Precarga del modelo (perezosa: recién en la primera intención del usuario)
 // ---------------------------------------------------------------------------
+// Antes `init()` corría en el top-level y bajaba varios MB de WASM + el .task de
+// MediaPipe desde CDNs de terceros apenas cargaba la página, ANTES de cualquier
+// consentimiento. En una app que se vende como privada/local, contactar terceros
+// sin que el usuario haya hecho click es discutible. Ahora la precarga se dispara
+// en el primer gesto de intención (hover/pointer sobre "Enable camera"), así
+// conservamos la latencia baja sin tocar la red hasta que el usuario va a jugar.
 const tracker = new HandTracker();
-const modelReady = tracker.init().then(
-  () => { statusEl.textContent = '✨ Ready — pick a mode'; return true; },
-  (err) => { console.error(err); statusEl.textContent = 'Model failed to load. Reload to retry.'; return false; },
-);
+let modelReady: Promise<boolean> | null = null;
+
+function preloadModel(): Promise<boolean> {
+  if (!modelReady) {
+    statusEl.textContent = 'Warming up the model…';
+    modelReady = tracker.init().then(
+      () => { statusEl.textContent = '✨ Ready — pick a mode'; return true; },
+      (err) => { console.error(err); statusEl.textContent = 'Model failed to load. Reload to retry.'; return false; },
+    );
+  }
+  return modelReady;
+}
+
+// Disparadores de intención: el primero gana (preloadModel es idempotente).
+startBtn.addEventListener('pointerenter', preloadModel, { once: true });
+startBtn.addEventListener('pointerdown', preloadModel, { once: true });
+startBtn.addEventListener('focus', preloadModel, { once: true });
 
 // ---------------------------------------------------------------------------
 // Estado de juego
@@ -142,7 +161,7 @@ async function start(chosen: Mode) {
     video.srcObject = stream;
     await video.play();
 
-    const ok = await modelReady;
+    const ok = await preloadModel();
     if (!ok) throw new Error('model not ready');
 
     audioCtx = new AudioContext();
