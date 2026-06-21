@@ -19,9 +19,4 @@ export type WorkerRequest =
 export type WorkerResponse =
   | { type: "ready"; delegate: "GPU" | "CPU" }
   | { type: "init-error"; message: string }
-  | {
-      type: "result";
-      timestamp: number;
-      hands: NormalizedLandmark[][];
-      handedness: string[];
-    };
+  | { type: "result"; timestamp: number; hands: NormalizedLandmark[][] };

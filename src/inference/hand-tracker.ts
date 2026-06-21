@@ -9,12 +9,7 @@ import type { NormalizedLandmark } from "../domain/hand-tracking";
 import type { WorkerRequest, WorkerResponse } from "./protocol";
 import { MEDIAPIPE } from "../config";
 
-export interface HandsFrame {
-  hands: NormalizedLandmark[][];
-  /** "Left"/"Right" por mano (de MediaPipe), para resolver la orientación. */
-  handedness: string[];
-}
-export type HandsListener = (frame: HandsFrame) => void;
+export type HandsListener = (hands: NormalizedLandmark[][]) => void;
 
 export class HandTracker {
   private worker!: Worker;
@@ -134,7 +129,7 @@ export class HandTracker {
     const msg = event.data;
     if (msg.type === "result") {
       this.busy = false;
-      this.listener?.({ hands: msg.hands, handedness: msg.handedness });
+      this.listener?.(msg.hands);
     }
   };
 

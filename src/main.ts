@@ -148,72 +148,9 @@ async function renderAR(): Promise<void> {
   const onResize = () => scene?.resize();
   window.addEventListener("resize", onResize);
 
-  tracker?.onHands((f) => scene?.setHands(f.hands, f.handedness));
-
-  if (import.meta.env.DEV || location.search.includes("debug")) {
-    setupDiagnostics(view.root);
-  }
+  tracker?.onHands((hands) => scene?.setHands(hands));
 
   startFrameLoop(view.video);
-}
-
-/**
- * HUD de diagnóstico (sólo en debug): muestra en vivo la señal de orientación y
- * permite grabar unos segundos de datos y descargarlos en JSON para calibrar la
- * detección palma/dorso sin adivinar.
- */
-function setupDiagnostics(root: HTMLElement): void {
-  const hud = document.createElement("div");
-  hud.style.cssText =
-    "position:absolute;right:1rem;bottom:1rem;z-index:5;pointer-events:auto;" +
-    "background:rgba(17,24,39,.8);color:#f9fafb;font:600 0.75rem/1.4 monospace;" +
-    "padding:.6rem .8rem;border-radius:.6rem;border:1px solid rgba(255,255,255,.15);min-width:11rem";
-  const info = document.createElement("div");
-  const btn = document.createElement("button");
-  btn.textContent = "⏺ Grabar 8 s";
-  btn.style.cssText =
-    "margin-top:.5rem;width:100%;cursor:pointer;border:none;border-radius:.4rem;" +
-    "padding:.4rem;background:#f45e61;color:#fff;font:600 .75rem system-ui";
-  hud.append(info, btn);
-  root.appendChild(hud);
-
-  let recording: Array<Record<string, unknown>> | null = null;
-  let recStart = 0;
-
-  const tick = (t: number) => {
-    const d = scene?.debugFacing();
-    if (d) {
-      info.textContent =
-        `mano: ${d.handedness ?? "—"}\n` +
-        `señal: ${d.signal.toFixed(3)}\n` +
-        `orientación: ${d.facing}\n` +
-        `ocluyendo: ${d.occluding ? "sí" : "no"}` +
-        (recording ? `\n● grabando… ${recording.length}` : "");
-      if (recording) {
-        recording.push({ t: Math.round(t - recStart), ...d });
-        if (t - recStart >= 8000) {
-          downloadRecording(recording);
-          recording = null;
-        }
-      }
-    }
-    requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
-
-  btn.addEventListener("click", () => {
-    recording = [];
-    recStart = performance.now();
-  });
-}
-
-function downloadRecording(data: Array<Record<string, unknown>>): void {
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "ar-recording.json";
-  a.click();
-  URL.revokeObjectURL(a.href);
 }
 
 /**
