@@ -34,11 +34,14 @@ const statusEl = document.querySelector<HTMLParagraphElement>('#status')!;
 const infoEl = document.querySelector<HTMLElement>('#info')!;
 const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 
-// Cap del device pixel ratio a 1: el fondo es un video de cámara (≤960px) que
-// igual se reescala, así que más DPR no agrega nitidez real y multiplica los
-// píxeles a pintar por frame (el mayor costo: drawImage + el velo de toda la
-// pantalla). Los átomos/moléculas son sprites, siguen nítidos. = el mayor ahorro.
-const DPR = Math.min(window.devicePixelRatio || 1, 1);
+// Density del canvas: usamos el devicePixelRatio real, capeado a 2. Antes estaba
+// clavado en 1 (`min(dpr, 1)`), con lo que cada `* DPR` era un no-op y todo el
+// HUD (paleta, fórmulas, recetas, score), que se rasteriza como texto/vectores
+// directo en el canvas, se veía borroso en pantallas HiDPI/retina. Capear a 2
+// evita reventar el fill-rate en pantallas 3x sin perder nitidez perceptible.
+// Tradeoff: el blit del video de fondo cuesta más a DPR>1; lo aceptamos a cambio
+// de un HUD nítido (el video ya viene reescalado de una cámara ≤960px).
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
 function resize() {
   canvas.width = window.innerWidth * DPR;
