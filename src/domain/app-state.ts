@@ -41,8 +41,7 @@ export function transition(state: AppState, event: AppEvent): AppState {
 
     case "loading-model":
       if (event.type === "MODEL_LOADED") return { status: "ready" };
-      if (event.type === "MODEL_ERROR")
-        return { status: "error", error: event.message };
+      if (event.type === "MODEL_ERROR") return { status: "error", error: event.message };
       return state;
 
     case "error":

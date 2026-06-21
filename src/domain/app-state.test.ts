@@ -18,9 +18,7 @@ describe("app-state machine", () => {
 
   it("desde denegado se puede reintentar", () => {
     const denied: AppState = { status: "permission-denied" };
-    expect(transition(denied, { type: "RETRY" }).status).toBe(
-      "requesting-permission",
-    );
+    expect(transition(denied, { type: "RETRY" }).status).toBe("requesting-permission");
   });
 
   it("modelo cargado → listo", () => {
@@ -36,16 +34,12 @@ describe("app-state machine", () => {
 
   it("desde error se puede reintentar", () => {
     const errored: AppState = { status: "error", error: "x" };
-    expect(transition(errored, { type: "RETRY" }).status).toBe(
-      "requesting-permission",
-    );
+    expect(transition(errored, { type: "RETRY" }).status).toBe("requesting-permission");
   });
 
   it("ignora eventos fuera de orden (sin saltos inválidos)", () => {
     // Cargar modelo sin permiso no debe hacer nada.
-    expect(transition(INITIAL_STATE, { type: "MODEL_LOADED" })).toBe(
-      INITIAL_STATE,
-    );
+    expect(transition(INITIAL_STATE, { type: "MODEL_LOADED" })).toBe(INITIAL_STATE);
     // Una vez listo, permanece listo.
     const ready: AppState = { status: "ready" };
     expect(transition(ready, { type: "PERMISSION_DENIED" })).toBe(ready);

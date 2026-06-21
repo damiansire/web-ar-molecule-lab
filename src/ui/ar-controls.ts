@@ -194,8 +194,7 @@ export class ARControls extends HTMLElement {
       const item = el("div", "item");
       const btn = iconButton(icon, title);
       item.append(btn);
-      const swatch =
-        colorKey && colorTitle ? this.makeColor(colorKey, colorTitle) : null;
+      const swatch = colorKey && colorTitle ? this.makeColor(colorKey, colorTitle) : null;
       if (swatch) {
         swatch.className = "swatch"; // absoluto: cuelga debajo sin agrandar la barra
         item.append(swatch);
@@ -243,12 +242,28 @@ export class ARControls extends HTMLElement {
     colorItem("color", "color", "Color de figura / Figure color");
     toggleItem("faces", "faces", "Caras (relleno) / Faces (fill)");
     toggleItem("wireframe", "wireframe", "Malla / Wireframe");
-    toggleItem("edges", "edges", "Aristas / Edges", "edgeColor", "Color de arista / Edge color");
+    toggleItem(
+      "edges",
+      "edges",
+      "Aristas / Edges",
+      "edgeColor",
+      "Color de arista / Edge color",
+    );
     toggleItem("shadow", "shadow", "Sombra / Shadow");
     toggleItem("multiHand", "hand", "Dos manos / Two hands");
-    toggleItem("occlusion", "occlusion", "Oclusión (figura detrás) / Occlusion (figure behind)");
+    toggleItem(
+      "occlusion",
+      "occlusion",
+      "Oclusión (figura detrás) / Occlusion (figure behind)",
+    );
     toggleItem("mirrored", "mirror", "Espejo / Mirror");
-    toggleItem("bgEnabled", "background", "Fondo / Background", "bgColor", "Color de fondo / Background color");
+    toggleItem(
+      "bgEnabled",
+      "background",
+      "Fondo / Background",
+      "bgColor",
+      "Color de fondo / Background color",
+    );
   }
 
   private makeColor(key: StringKey, title: string): HTMLInputElement {

@@ -3,7 +3,12 @@
  * Emite el evento `figure-change` con `detail.kind` cuando el usuario elige.
  * Encapsulado en Shadow DOM para no filtrar estilos al resto de la app.
  */
-import { FIGURES, DEFAULT_FIGURE, isFigureKind, type FigureKind } from "../domain/figures";
+import {
+  FIGURES,
+  DEFAULT_FIGURE,
+  isFigureKind,
+  type FigureKind,
+} from "../domain/figures";
 import { ICONS } from "./icons";
 
 // Nombre en inglés para el tooltip bilingüe (el ícono es el cue principal).
@@ -71,9 +76,7 @@ export class FigureSelector extends HTMLElement {
     this.shadowRoot?.querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
       b.setAttribute("aria-pressed", String(b.dataset.kind === kind));
     });
-    this.dispatchEvent(
-      new CustomEvent<FigureKind>("figure-change", { detail: kind }),
-    );
+    this.dispatchEvent(new CustomEvent<FigureKind>("figure-change", { detail: kind }));
   }
 }
 

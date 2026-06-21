@@ -47,9 +47,7 @@ async function loadMediaPipe(bundleUrl: string): Promise<any> {
     if (!r.ok) throw new Error(`No se pudo descargar MediaPipe (${r.status}).`);
     return r.text();
   });
-  const blobUrl = URL.createObjectURL(
-    new Blob([code], { type: "text/javascript" }),
-  );
+  const blobUrl = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
   // Shim de CommonJS: el bundle es CJS y asigna a `module.exports`.
   const g = self as any;
   g.module = { exports: {} };
@@ -109,12 +107,14 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   switch (msg.type) {
     case "init":
-      init(msg.bundleUrl, msg.wasmBase, msg.modelUrl, msg.forceCpu).catch((err: unknown) => {
-        post({
-          type: "init-error",
-          message: err instanceof Error ? err.message : String(err),
-        });
-      });
+      init(msg.bundleUrl, msg.wasmBase, msg.modelUrl, msg.forceCpu).catch(
+        (err: unknown) => {
+          post({
+            type: "init-error",
+            message: err instanceof Error ? err.message : String(err),
+          });
+        },
+      );
       break;
     case "frame":
       detect(msg.bitmap, msg.timestamp);

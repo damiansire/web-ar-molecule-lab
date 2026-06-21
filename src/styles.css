@@ -22,10 +22,14 @@ body {
 body {
   background:
     radial-gradient(1200px 800px at 70% -10%, #1b2440 0, transparent 60%),
-    radial-gradient(900px 600px at -10% 110%, #1a2440 0, transparent 55%),
-    var(--bg);
+    radial-gradient(900px 600px at -10% 110%, #1a2440 0, transparent 55%), var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 #app {
@@ -64,12 +68,16 @@ button.primary {
   cursor: pointer;
   width: 100%;
   padding: 0.8rem 1.25rem;
-  font: 600 1rem/1 system-ui, sans-serif;
+  font:
+    600 1rem/1 system-ui,
+    sans-serif;
   color: #fff;
   background: linear-gradient(180deg, var(--accent), var(--accent-strong));
   border: none;
   border-radius: 0.65rem;
-  transition: transform 0.1s, filter 0.15s;
+  transition:
+    transform 0.1s,
+    filter 0.15s;
 }
 
 button.primary:hover {

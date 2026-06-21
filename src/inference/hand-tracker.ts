@@ -26,9 +26,7 @@ export class HandTracker {
   private createWorker(): void {
     // Worker clásico (sin `type: "module"`): el worker no tiene imports ESM y
     // carga MediaPipe con `importScripts`. Ver nota en el archivo del worker.
-    this.worker = new Worker(
-      new URL("./hand-landmarker.worker.ts", import.meta.url),
-    );
+    this.worker = new Worker(new URL("./hand-landmarker.worker.ts", import.meta.url));
   }
 
   /**
