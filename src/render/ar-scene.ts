@@ -487,7 +487,8 @@ export class ARScene {
     if (hand0 && anchorOf(hand0)) {
       // Señal de orientación: winding * lateralidad. Histéresis con zona muerta
       // para no parpadear cuando la mano está casi de canto (señal ~0).
-      const handSign = this.handedness[0] === "Left" ? -1 : 1;
+      // (Signo calibrado: con el dorso a la cámara → dorso/back → ocluye.)
+      const handSign = this.handedness[0] === "Left" ? 1 : -1;
       const signal = palmWinding(hand0) * handSign;
       if (signal < -FACING_DEADZONE) this.facingBack = true;
       else if (signal > FACING_DEADZONE) this.facingBack = false;
