@@ -11,6 +11,7 @@ import {
 import { HandTracker, LM, type Hand } from './hands';
 import { ParticleSystem } from './particles';
 import { drawAtom, drawMolecule } from './structure';
+import { VoiceRecognizer } from './voice';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -33,9 +34,11 @@ const statusEl = document.querySelector<HTMLParagraphElement>('#status')!;
 const infoEl = document.querySelector<HTMLElement>('#info')!;
 const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 
-// Cap del device pixel ratio: en pantallas Retina/4K rendea muchísimos menos
-// píxeles por frame (el mayor ahorro de performance) sin pérdida visual notoria.
-const DPR = Math.min(window.devicePixelRatio || 1, 2);
+// Cap del device pixel ratio a 1: el fondo es un video de cámara (≤960px) que
+// igual se reescala, así que más DPR no agrega nitidez real y multiplica los
+// píxeles a pintar por frame (el mayor costo: drawImage + el velo de toda la
+// pantalla). Los átomos/moléculas son sprites, siguen nítidos. = el mayor ahorro.
+const DPR = Math.min(window.devicePixelRatio || 1, 1);
 
 function resize() {
   canvas.width = window.innerWidth * DPR;
@@ -67,9 +70,11 @@ interface HandState {
   dwellSymbol: ElementSymbol | null; dwellMs: number;
   /** Progreso de dwell sobre el botón de modo (in-canvas). */
   btnMs: number;
+  /** Progreso de dwell sobre la papelera (descartar lo que sostiene). */
+  trashMs: number;
 }
 const makeHand = (): HandState => ({
-  present: false, x: 0, y: 0, held: null, count: 0, dwellSymbol: null, dwellMs: 0, btnMs: 0,
+  present: false, x: 0, y: 0, held: null, count: 0, dwellSymbol: null, dwellMs: 0, btnMs: 0, trashMs: 0,
 });
 type SlotName = 'Left' | 'Right';
 const hands: Record<SlotName, HandState> = { Left: makeHand(), Right: makeHand() };
@@ -95,10 +100,15 @@ let cooldown = 0;
 let modeSwitchCooldown = 0; // ms, evita re-toggles del botón de modo
 
 const BTN_DWELL_MS = 1100;
+const TRASH_DWELL_MS = 650; // dwell para vaciar la mano en la papelera
 
 const particles = new ParticleSystem();
 let audioCtx: AudioContext | null = null;
 let infoTimer: ReturnType<typeof setTimeout> | undefined;
+
+// Voz: nombrar un elemento lo hace aparecer en una mano libre.
+const voice = new VoiceRecognizer();
+let voiceListening = false;
 
 // ---------------------------------------------------------------------------
 // Arranque por modo
@@ -110,8 +120,15 @@ async function start(chosen: Mode) {
   startBtn.disabled = true;
   try {
     statusEl.textContent = 'Requesting camera…';
+    // 960×540 alcanza de sobra para el tracking y abarata dibujar el fondo.
+    // frameRate ideal 30: evita que la cámara entregue a 15 fps en poca luz.
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: 1280, height: 720 },
+      video: {
+        facingMode: 'user',
+        width: { ideal: 960 },
+        height: { ideal: 540 },
+        frameRate: { ideal: 30 },
+      },
       audio: false,
     });
     video.srcObject = stream;
@@ -126,6 +143,9 @@ async function start(chosen: Mode) {
     running = true;
     lastTime = performance.now();
     requestAnimationFrame(loop);
+
+    // Escucha de voz (pide permiso de micrófono; si falla, el juego sigue por gestos).
+    voiceListening = voice.start(giveElement);
   } catch (err) {
     console.error(err);
     statusEl.textContent = "Couldn't access the camera. Check permissions and reload.";
@@ -162,7 +182,15 @@ function switchMode() {
 // Loop
 // ---------------------------------------------------------------------------
 let lastTime = 0;
-let lastVideoTime = -1;
+
+// HUD de performance (solo DEV): FPS real, costo del frame en el hilo principal
+// y Hz de detección. Sirve para ver dónde está el cuello de botella en vivo.
+const SHOW_PERF = import.meta.env.DEV;
+let perfFps = 60;
+let perfFrameMs = 0;
+let perfDetectHz = 0;
+let perfLastResultCount = 0;
+let perfHzAccum = 0;
 
 function loop(now: number) {
   if (!running) return;
@@ -170,11 +198,13 @@ function loop(now: number) {
   const dt = dtMs / 1000;
   lastTime = now;
   const time = now / 1000;
+  const bodyStart = performance.now();
 
-  if (video.currentTime !== lastVideoTime && video.readyState >= 2) {
-    lastVideoTime = video.currentTime;
-    syncHands(tracker.detect(video, now));
-  }
+  // La detección corre en un Web Worker: pump() no bloquea (manda el frame si el
+  // worker está libre) y leemos el último resultado disponible. Así el render
+  // —y el video de fondo— nunca esperan a la inferencia.
+  if (video.readyState >= 2) tracker.pump(video, now);
+  syncHands(tracker.hands);
 
   updateInteraction(dtMs);
   updateFloating(dt);
@@ -185,7 +215,37 @@ function loop(now: number) {
   if (modeSwitchCooldown > 0) modeSwitchCooldown = Math.max(0, modeSwitchCooldown - dtMs);
 
   render(time);
+
+  if (SHOW_PERF) {
+    // EMA del FPS (a partir del delta de rAF) y del costo del frame.
+    perfFps += ((1000 / Math.max(1, dtMs)) - perfFps) * 0.08;
+    perfFrameMs += ((performance.now() - bodyStart) - perfFrameMs) * 0.08;
+    perfHzAccum += dtMs;
+    if (perfHzAccum >= 500) {
+      perfDetectHz = (tracker.resultCount - perfLastResultCount) * (1000 / perfHzAccum);
+      perfLastResultCount = tracker.resultCount;
+      perfHzAccum = 0;
+    }
+    drawPerfHud();
+  }
+
   requestAnimationFrame(loop);
+}
+
+function drawPerfHud() {
+  const pad = 10 * DPR;
+  ctx.save();
+  ctx.font = `600 ${13 * DPR}px ui-monospace, monospace`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const text = `${perfFps.toFixed(0)} fps · frame ${perfFrameMs.toFixed(1)}ms · detect ${perfDetectHz.toFixed(0)}Hz`;
+  const w = ctx.measureText(text).width + pad * 2;
+  const y = canvas.height - 28 * DPR - pad;
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.7)';
+  ctx.fillRect(pad, y, w, 24 * DPR);
+  ctx.fillStyle = perfFps < 40 ? '#f87171' : perfFps < 55 ? '#fbbf24' : '#4ade80';
+  ctx.fillText(text, pad * 2, y + 5 * DPR);
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------
@@ -243,24 +303,49 @@ function modeButtonRect() {
   return { x: pad, y: pad, w, h };
 }
 
+/** Papelera (esquina inferior derecha): vacía la mano que la sostiene, por dwell. */
+function trashRect() {
+  const w = Math.min(canvas.width * 0.12, 116 * DPR);
+  const h = 76 * DPR;
+  const pad = 18 * DPR;
+  return { x: canvas.width - w - pad, y: canvas.height - h - pad, w, h };
+}
+
 // ---------------------------------------------------------------------------
 // Interacción
 // ---------------------------------------------------------------------------
 function updateInteraction(dtMs: number) {
   const tiles = paletteTiles();
   const mb = modeButtonRect();
+  const tb = trashRect();
   for (const name of ['Left', 'Right'] as SlotName[]) {
     const st = hands[name];
-    if (!st.present) { st.btnMs = 0; continue; }
+    if (!st.present) { st.btnMs = 0; st.trashMs = 0; continue; }
 
     // Botón de modo (in-canvas, top-left) tiene prioridad sobre los tiles.
     if (st.x >= mb.x && st.x <= mb.x + mb.w && st.y >= mb.y && st.y <= mb.y + mb.h) {
-      st.dwellSymbol = null; st.dwellMs = 0;
+      st.dwellSymbol = null; st.dwellMs = 0; st.trashMs = 0;
       st.btnMs += dtMs;
       if (st.btnMs >= BTN_DWELL_MS && modeSwitchCooldown === 0) switchMode();
       continue;
     }
     st.btnMs = 0;
+
+    // Papelera (esquina inferior derecha): descarta lo que sostiene, por dwell.
+    if (st.x >= tb.x && st.x <= tb.x + tb.w && st.y >= tb.y && st.y <= tb.y + tb.h) {
+      st.dwellSymbol = null; st.dwellMs = 0;
+      if (st.held) {
+        st.trashMs += dtMs;
+        if (st.trashMs >= TRASH_DWELL_MS) {
+          particles.burst(st.x, st.y, '#94a3b8', 28, 260 * DPR);
+          toasts.push({ text: '🗑', color: '#94a3b8', x: st.x / canvas.width, y: st.y / canvas.height, age: 0 });
+          st.held = null; st.count = 0; st.trashMs = 0;
+          playChime(false);
+        }
+      } else { st.trashMs = 0; }
+      continue;
+    }
+    st.trashMs = 0;
 
     const over = tileUnder(st.x, st.y, tiles);
     if (over) {
@@ -317,6 +402,41 @@ function triggerCombine() {
 }
 
 // ---------------------------------------------------------------------------
+// Voz → mano libre
+// ---------------------------------------------------------------------------
+/** Pone `symbol` en una mano libre presente (o suma si ya lo sostiene). */
+function giveElement(symbol: ElementSymbol) {
+  const order: SlotName[] = ['Right', 'Left'];
+  // Si una mano ya sostiene ese elemento, sumamos una unidad.
+  for (const n of order) {
+    const st = hands[n];
+    if (st.present && st.held === symbol) {
+      st.count = Math.min(MAX_COUNT, st.count + 1);
+      voiceFeedback(st, symbol);
+      return;
+    }
+  }
+  // Si no, va a la primera mano libre presente.
+  for (const n of order) {
+    const st = hands[n];
+    if (st.present && st.held === null) {
+      st.held = symbol;
+      st.count = 1;
+      voiceFeedback(st, symbol);
+      return;
+    }
+  }
+  // Ninguna mano libre a la vista: aviso suave.
+  toasts.push({ text: `${ELEMENTS[symbol].symbol} — show a free hand`, color: ELEMENTS[symbol].color, x: 0.5, y: 0.42, age: 0 });
+}
+
+function voiceFeedback(st: HandState, symbol: ElementSymbol) {
+  particles.burst(st.x, st.y - 40 * DPR, ELEMENTS[symbol].color, 26, 240 * DPR);
+  toasts.push({ text: ELEMENTS[symbol].symbol, color: ELEMENTS[symbol].color, x: st.x / canvas.width, y: (st.y - 96 * DPR) / canvas.height, age: 0 });
+  playChime(true);
+}
+
+// ---------------------------------------------------------------------------
 // Levitación
 // ---------------------------------------------------------------------------
 function spawnFloating(molecule: Molecule, fx: number, fy: number) {
@@ -351,10 +471,10 @@ function spawnTarget() {
   targets.push({ molecule, x: 0.12 + Math.random() * 0.76, y: -0.08, vy: fallSpeed() });
 }
 function fallSpeed() {
-  return 0.045 + Math.min(0.08, elapsed * 0.0014); // acelera con el tiempo
+  return 0.026 + Math.min(0.04, elapsed * 0.0007); // cae más lento y acelera suave
 }
 function spawnInterval() {
-  return Math.max(1.8, 3.6 - elapsed * 0.03);
+  return Math.max(2.8, 4.8 - elapsed * 0.02); // aparecen con más calma
 }
 function updateChallenge(dt: number) {
   elapsed += dt;
@@ -428,10 +548,59 @@ function render(time: number) {
   drawFloating();
   drawPalette(time);
   drawModeButton();
+  drawTrash();
+  drawVoiceHint();
   for (const name of ['Left', 'Right'] as SlotName[]) drawHand(hands[name], time);
   particles.draw(ctx);
   drawToasts();
   if (mode === 'challenge') drawHud();
+}
+
+/** Papelera in-canvas (esquina inferior derecha) con progreso de dwell. */
+function drawTrash() {
+  const tb = trashRect();
+  const progress = Math.max(hands.Left.trashMs, hands.Right.trashMs) / TRASH_DWELL_MS;
+  const active = progress > 0;
+
+  roundRect(tb.x, tb.y, tb.w, tb.h, 14 * DPR);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
+  ctx.fill();
+  if (active) {
+    ctx.save();
+    roundRect(tb.x, tb.y, tb.w, tb.h, 14 * DPR);
+    ctx.clip();
+    ctx.fillStyle = '#f8717133';
+    ctx.fillRect(tb.x, tb.y, tb.w, tb.h * Math.min(1, progress));
+    ctx.restore();
+  }
+  roundRect(tb.x, tb.y, tb.w, tb.h, 14 * DPR);
+  ctx.lineWidth = 2 * DPR;
+  ctx.strokeStyle = active ? '#f87171' : 'rgba(148, 163, 184, 0.55)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#e5e7eb';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `${28 * DPR}px system-ui, sans-serif`;
+  ctx.fillText('🗑', tb.x + tb.w / 2, tb.y + tb.h * 0.42);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = `600 ${12 * DPR}px system-ui, sans-serif`;
+  ctx.fillText('discard', tb.x + tb.w / 2, tb.y + tb.h * 0.8);
+}
+
+/** Indicador de escucha por voz (al lado del botón de modo). */
+function drawVoiceHint() {
+  if (!voiceListening) return;
+  const mb = modeButtonRect();
+  const x = mb.x + mb.w + 14 * DPR;
+  const y = mb.y + mb.h / 2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `${20 * DPR}px system-ui, sans-serif`;
+  ctx.fillText('🎙', x, y);
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+  ctx.font = `600 ${14 * DPR}px system-ui, sans-serif`;
+  ctx.fillText('say an element', x + 26 * DPR, y);
 }
 
 function drawModeButton() {
@@ -517,7 +686,9 @@ function drawGuide(time: number) {
   // Tira de moléculas-objetivo en la parte inferior (referencia, sin presión).
   const n = MOLECULES.length;
   const pad = 16 * DPR;
-  const w = (canvas.width - pad * (n + 1)) / n;
+  // Reservamos el ancho de la papelera (esquina inf. derecha) para no taparla.
+  const usable = trashRect().x - 8 * DPR;
+  const w = (usable - pad * (n + 1)) / n;
   const h = Math.min(w * 1.15, 150 * DPR);
   const y = canvas.height - h - pad;
   MOLECULES.forEach((m, i) => {
@@ -674,3 +845,13 @@ for (let i = 0; i < 3; i++) {
 }
 lastTime = performance.now();
 requestAnimationFrame(idleLoop);
+
+// Lectura de métricas para diagnóstico (solo DEV).
+if (import.meta.env.DEV) {
+  (window as unknown as { __perf: () => unknown }).__perf = () => ({
+    fps: +perfFps.toFixed(1),
+    frameMs: +perfFrameMs.toFixed(2),
+    detectHz: +perfDetectHz.toFixed(1),
+    running,
+  });
+}
