@@ -40,6 +40,12 @@ import {
   palmWinding,
 } from "../domain/hand-tracking";
 import type { NormalizedLandmark } from "../domain/hand-tracking";
+import {
+  applyFacingHysteresis,
+  cornerTarget,
+  isHeld,
+  resolvePlacement,
+} from "../domain/placement";
 
 const BASE = 120; // tamaño base de la figura en píxeles
 const MAX_FIGURES = 2; // tope de manos simultáneas
@@ -165,7 +171,12 @@ export class ARScene {
   private running = false;
 
   constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true });
+    this.renderer = new WebGLRenderer({
+      canvas,
+      alpha: true,
+      antialias: true,
+      preserveDrawingBuffer: true, // permite leer el canvas para "sacar foto"
+    });
     this.renderer.setClearColor(0x000000, 0); // fondo transparente: se ve el video
     const { clientWidth: w, clientHeight: h } = canvas;
     this.camera = new OrthographicCamera(0, w, 0, h, -1000, 1000);
@@ -416,27 +427,18 @@ export class ARScene {
         inst.everSeen = true;
       }
 
-      const held = inst.everSeen && time - inst.lastSeen < HAND_GRACE_MS;
+      // Objetivo de la figura (lógica pura): sobre la mano, sostenida por la
+      // gracia, o preview en la esquina; nunca desaparece de golpe.
+      const cornerScale = PREVIEW_SCALE * this.sizeScale;
+      const target = resolvePlacement({
+        onHand:
+          anchor !== null || isHeld(inst.everSeen, inst.lastSeen, time, HAND_GRACE_MS),
+        hand: { x: inst.hx, y: inst.hy, s: inst.hs },
+        isPrimary: i === 0,
+        corner: { ...cornerTarget(w, BASE, cornerScale), s: cornerScale },
+      });
 
-      // Objetivo de la figura. Nunca desaparece de golpe: si la mano se va,
-      // primero se sostiene (gracia) y luego se desliza hacia la esquina.
-      let tx: number;
-      let ty: number;
-      let ts: number;
-      if (anchor || held) {
-        // Sobre la mano (o sosteniendo su última posición ante una pérdida breve).
-        tx = inst.hx;
-        ty = inst.hy;
-        ts = inst.hs;
-      } else if (i === 0) {
-        // Mano ausente: preview en la esquina superior derecha (se desliza hacia
-        // allá, no desaparece). Margen amplio para que no se salga al rotar.
-        ts = PREVIEW_SCALE * this.sizeScale;
-        const margin = BASE * 0.9 * ts + 26;
-        tx = w - margin;
-        ty = margin;
-      } else {
-        // Segunda figura sin su mano: se oculta (no hay segunda esquina).
+      if (!target.show) {
         inst.mesh.visible = false;
         inst.shadow.visible = false;
         inst.primed = false;
@@ -449,14 +451,14 @@ export class ARScene {
       // Snap sólo en el primer frame (para no deslizar desde 0,0); después
       // siempre interpolamos → transición continua mano <-> esquina.
       if (!inst.primed) {
-        inst.x = tx;
-        inst.y = ty;
-        inst.s = ts;
+        inst.x = target.x;
+        inst.y = target.y;
+        inst.s = target.s;
         inst.primed = true;
       } else {
-        inst.x += (tx - inst.x) * smooth;
-        inst.y += (ty - inst.y) * smooth;
-        inst.s += (ts - inst.s) * smooth;
+        inst.x += (target.x - inst.x) * smooth;
+        inst.y += (target.y - inst.y) * smooth;
+        inst.s += (target.s - inst.s) * smooth;
       }
 
       inst.mesh.position.set(inst.x, inst.y, 0);
@@ -478,11 +480,11 @@ export class ARScene {
       // El winding en cambio es estable: negativo con la palma, positivo con el
       // dorso (para la mano derecha del usuario). Histéresis con zona muerta
       // para no parpadear cuando la mano está casi de canto (señal ~0).
-      const signal = palmWinding(hand0);
-      if (signal > FACING_DEADZONE)
-        this.facingBack = true; // dorso a la cámara
-      else if (signal < -FACING_DEADZONE) this.facingBack = false; // palma
-      // dentro de la zona muerta: se conserva el estado anterior
+      this.facingBack = applyFacingHysteresis(
+        this.facingBack,
+        palmWinding(hand0),
+        FACING_DEADZONE,
+      );
     }
 
     if (hand0 && hasHand0 && this.occlusionEnabled && this.facingBack) {

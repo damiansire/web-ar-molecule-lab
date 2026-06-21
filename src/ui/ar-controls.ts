@@ -266,6 +266,11 @@ export class ARControls extends HTMLElement {
     );
   }
 
+  /** Estado actual de los controles (para consumidores como "sacar foto"). */
+  getState(): ControlsState {
+    return { ...this.state };
+  }
+
   private makeColor(key: StringKey, title: string): HTMLInputElement {
     const input = document.createElement("input");
     input.type = "color";

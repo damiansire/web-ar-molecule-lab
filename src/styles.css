@@ -148,3 +148,35 @@ button.primary:disabled {
   z-index: 3;
   pointer-events: none; /* sólo los controles internos capturan clics */
 }
+
+.ar-capture {
+  position: absolute;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+  transition:
+    transform 0.1s,
+    filter 0.15s;
+}
+
+.ar-capture svg {
+  display: block;
+}
+
+.ar-capture:hover {
+  filter: brightness(1.08);
+}
+
+.ar-capture:active {
+  transform: scale(0.94);
+}

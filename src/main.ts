@@ -19,6 +19,7 @@ import type { ARScene } from "./render/ar-scene";
 import { permissionScreen, loadingScreen, errorScreen } from "./ui/screens";
 import { arView } from "./ui/ar-view";
 import type { ControlsState } from "./ui/ar-controls";
+import { capturePhoto } from "./render/capture";
 
 const appEl = document.getElementById("app")!;
 
@@ -111,6 +112,14 @@ function renderError(message: string, onRetry: () => void): void {
   appEl.appendChild(root);
 }
 
+/** Error no recuperable (p. ej. sin WebGL): muestra el mensaje y ofrece recargar. */
+function showFatal(message: string): void {
+  appEl.replaceChildren();
+  const { root, button } = errorScreen(message, "Recargar");
+  button.addEventListener("click", () => location.reload());
+  appEl.appendChild(root);
+}
+
 async function startModel(): Promise<void> {
   tracker = new HandTracker();
   try {
@@ -130,12 +139,27 @@ async function renderAR(): Promise<void> {
   const { ARScene } = await import("./render/ar-scene");
 
   const view = arView();
+
+  // Crear el renderer puede fallar si el navegador no tiene WebGL: lo manejamos
+  // con gracia en vez de dejar la app en blanco.
+  let created: ARScene;
+  try {
+    created = new ARScene(view.canvas);
+  } catch {
+    cleanup();
+    showFatal("Tu navegador no pudo iniciar WebGL, necesario para el 3D.");
+    return;
+  }
+
   appEl.appendChild(view.root);
+  // Ahora que el canvas está en el DOM y tiene su tamaño real, ajustamos cámara
+  // y renderer (en el constructor el canvas estaba suelto → tamaño por defecto).
+  created.resize();
+  scene = created;
 
   if (stream) view.video.srcObject = stream;
   void view.video.play().catch(() => {});
 
-  scene = new ARScene(view.canvas);
   scene.setFigure(DEFAULT_FIGURE);
   scene.start();
 
@@ -165,6 +189,16 @@ async function renderAR(): Promise<void> {
     // detrás de la figura (equivale al "Background" de la versión original).
     view.video.style.visibility = c.bgEnabled ? "hidden" : "visible";
     view.root.style.background = c.bgEnabled ? c.bgColor : "#000";
+  });
+
+  view.capture.addEventListener("click", () => {
+    const c = view.controls.getState();
+    capturePhoto({
+      video: view.video,
+      glCanvas: view.canvas,
+      mirrored: c.mirrored,
+      background: c.bgEnabled ? c.bgColor : null,
+    });
   });
 
   onResize = () => scene?.resize();
