@@ -23,6 +23,15 @@ export interface ScreenPoint {
  */
 export const ANCHOR_LANDMARK_INDEX = 9;
 
+/** Índice de la muñeca (WRIST). */
+export const WRIST_LANDMARK_INDEX = 0;
+
+/**
+ * Distancia muñeca↔base-del-dedo-medio (relativa a la altura del frame) que
+ * mapea a escala 1. Ajustado empíricamente para una mano a distancia media.
+ */
+export const SPAN_REFERENCE = 0.18;
+
 /**
  * Convierte un landmark normalizado a píxeles dentro de un viewport de
  * `width`×`height`. Si `mirrored` es true (vista tipo "selfie"), se espeja
@@ -63,12 +72,26 @@ export function pickAnchor(
 }
 
 /**
- * Factor de escala de la figura según la cercanía de la mano.
- * `z` de MediaPipe es ~0 en la muñeca y negativo cuanto más cerca está la
- * cámara; lo mapeamos a un rango acotado para que la figura "respire" sin
- * desaparecer ni explotar.
+ * Escala por perspectiva según el tamaño aparente de la mano: cuanto más cerca
+ * está de la cámara, más separados se ven los landmarks (mano más grande en
+ * pantalla) → figura más grande; al alejarse, se juntan → más chica.
+ *
+ * Mide la distancia muñeca↔base-del-dedo-medio en píxeles (aspect-correcto) y
+ * la normaliza por la altura del frame (independiente de la resolución). El
+ * resultado se acota para que la figura no desaparezca ni explote.
  */
-export function depthToScale(z: number, min = 0.6, max = 1.8): number {
-  const raw = 1 - z * 6; // z negativo → escala > 1
-  return Math.min(max, Math.max(min, raw));
+export function handPerspectiveScale(
+  hand: readonly NormalizedLandmark[] | undefined,
+  width: number,
+  height: number,
+  min = 0.35,
+  max = 2.5,
+): number {
+  const wrist = hand?.[WRIST_LANDMARK_INDEX];
+  const mcp = hand?.[ANCHOR_LANDMARK_INDEX];
+  if (!wrist || !mcp) return 1;
+  const dx = (wrist.x - mcp.x) * width;
+  const dy = (wrist.y - mcp.y) * height;
+  const spanRel = Math.hypot(dx, dy) / height;
+  return Math.min(max, Math.max(min, spanRel / SPAN_REFERENCE));
 }

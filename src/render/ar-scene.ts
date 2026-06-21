@@ -30,7 +30,7 @@ import {
   WebGLRenderer,
 } from "three";
 import type { FigureKind } from "../domain/figures";
-import { anchorOf, depthToScale, landmarkToScreen } from "../domain/hand-tracking";
+import { anchorOf, handPerspectiveScale, landmarkToScreen } from "../domain/hand-tracking";
 import type { NormalizedLandmark } from "../domain/hand-tracking";
 
 const BASE = 120; // tamaño base de la figura en píxeles
@@ -276,7 +276,8 @@ export class ARScene {
     for (let i = 0; i < this.instances.length; i++) {
       const inst = this.instances[i];
       const allow = this.figure !== "none" && i < maxFigures;
-      const anchor = allow ? anchorOf(this.hands[i]) : null;
+      const hand = allow ? this.hands[i] : undefined;
+      const anchor = anchorOf(hand);
 
       let tx: number;
       let ty: number;
@@ -287,7 +288,9 @@ export class ARScene {
         const p = landmarkToScreen(anchor, w, h, this.mirrored);
         tx = p.x;
         ty = p.y;
-        ts = depthToScale(p.z) * this.sizeScale;
+        // Perspectiva: tamaño según la mano (cerca = grande, lejos = chica),
+        // por el tamaño elegido en el slider.
+        ts = handPerspectiveScale(hand, w, h) * this.sizeScale;
         parked = false;
       } else if (i === 0 && this.figure !== "none") {
         // Sin mano: la primera figura queda como preview en la esquina superior

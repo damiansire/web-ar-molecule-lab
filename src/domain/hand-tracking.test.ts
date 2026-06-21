@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   landmarkToScreen,
   pickAnchor,
-  depthToScale,
+  handPerspectiveScale,
   ANCHOR_LANDMARK_INDEX,
+  WRIST_LANDMARK_INDEX,
+  SPAN_REFERENCE,
   type NormalizedLandmark,
 } from "./hand-tracking";
 
@@ -43,13 +45,34 @@ describe("pickAnchor", () => {
   });
 });
 
-describe("depthToScale", () => {
-  it("queda acotado dentro de [min, max]", () => {
-    expect(depthToScale(-100)).toBe(1.8);
-    expect(depthToScale(100)).toBe(0.6);
+describe("handPerspectiveScale", () => {
+  // Construye una mano (21 landmarks) con la muñeca y el MCP separados `span`
+  // en Y (normalizado), el resto irrelevante.
+  const handWithSpan = (span: number): NormalizedLandmark[] => {
+    const h = Array.from({ length: 21 }, () => lm(0.5, 0.5));
+    h[WRIST_LANDMARK_INDEX] = lm(0.5, 0.5);
+    h[ANCHOR_LANDMARK_INDEX] = lm(0.5, 0.5 - span);
+    return h;
+  };
+
+  it("escala ~1 a la distancia de referencia (frame cuadrado)", () => {
+    const s = handPerspectiveScale(handWithSpan(SPAN_REFERENCE), 480, 480);
+    expect(s).toBeCloseTo(1, 5);
   });
 
-  it("mano más cerca (z negativo) → figura más grande", () => {
-    expect(depthToScale(-0.05)).toBeGreaterThan(depthToScale(0));
+  it("mano más cerca (más separación) → figura más grande", () => {
+    const cerca = handPerspectiveScale(handWithSpan(SPAN_REFERENCE * 1.5), 480, 480);
+    const lejos = handPerspectiveScale(handWithSpan(SPAN_REFERENCE * 0.6), 480, 480);
+    expect(cerca).toBeGreaterThan(lejos);
+  });
+
+  it("queda acotado dentro de [min, max]", () => {
+    expect(handPerspectiveScale(handWithSpan(5), 480, 480)).toBe(2.5);
+    expect(handPerspectiveScale(handWithSpan(0.001), 480, 480)).toBe(0.35);
+  });
+
+  it("sin mano válida → escala neutra (1)", () => {
+    expect(handPerspectiveScale(undefined, 480, 480)).toBe(1);
+    expect(handPerspectiveScale([lm(0, 0)], 480, 480)).toBe(1);
   });
 });
