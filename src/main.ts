@@ -115,6 +115,10 @@ let voiceListening = false;
 // ---------------------------------------------------------------------------
 startBtn.addEventListener('click', () => start('normal'));
 
+// Stream activo de la cámara: lo guardamos para poder soltar las pistas (apagar
+// la luz de la cámara) tanto en un error de arranque como en el teardown global.
+let camStream: MediaStream | null = null;
+
 async function start(chosen: Mode) {
   mode = chosen;
   startBtn.disabled = true;
@@ -131,6 +135,7 @@ async function start(chosen: Mode) {
       },
       audio: false,
     });
+    camStream = stream;
     video.srcObject = stream;
     await video.play();
 
@@ -148,11 +153,37 @@ async function start(chosen: Mode) {
     voiceListening = voice.start(giveElement);
   } catch (err) {
     console.error(err);
+    // Si algo falló DESPUÉS de obtener la cámara (modelo no listo, AudioContext…),
+    // soltamos las pistas para no dejar la luz de la cámara prendida sobre un error.
+    stopCamera();
     statusEl.textContent = "Couldn't access the camera. Check permissions and reload.";
     statusEl.classList.add('error');
     startBtn.disabled = false;
   }
 }
+
+/** Apaga la cámara: detiene todas las pistas del stream y lo descarta. */
+function stopCamera() {
+  if (camStream) {
+    camStream.getTracks().forEach((t) => t.stop());
+    camStream = null;
+  }
+  video.srcObject = null;
+}
+
+/**
+ * Teardown global de recursos sensibles de hardware. Idempotente: se dispara al
+ * ocultar/cerrar la página para no dejar cámara, micrófono, worker ni audio vivos.
+ */
+function teardown() {
+  running = false;
+  stopCamera();
+  voice.stop();
+  voiceListening = false;
+  tracker.dispose();
+  if (audioCtx) { audioCtx.close().catch(() => { /* ya cerrado */ }); audioCtx = null; }
+}
+window.addEventListener('pagehide', teardown);
 
 function resetGame() {
   floating.length = 0;
