@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:webgpu": "node scripts/webgpu-smoke.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
