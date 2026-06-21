@@ -25,6 +25,9 @@ export const ANCHOR_LANDMARK_INDEX = 9;
 
 /** Índice de la muñeca (WRIST). */
 export const WRIST_LANDMARK_INDEX = 0;
+/** Índices de la base del índice y del meñique (para el plano de la palma). */
+export const INDEX_MCP_INDEX = 5;
+export const PINKY_MCP_INDEX = 17;
 
 /**
  * Distancia muñeca↔base-del-dedo-medio (relativa a la altura del frame) que
@@ -80,6 +83,31 @@ export function pickAnchor(
  * la normaliza por la altura del frame (independiente de la resolución). El
  * resultado se acota para que la figura no desaparezca ni explote.
  */
+/**
+ * Orientación de la mano respecto a la cámara, según el sentido de giro
+ * (winding) del triángulo muñeca→base-índice→base-meñique. Al dar vuelta la
+ * mano, ese sentido se invierte. Si la vista está espejada (selfie), se corrige.
+ *
+ * "front" = palma hacia la cámara (figura por delante);
+ * "back" = dorso hacia la cámara (figura por detrás / ocluida).
+ */
+export function handFacing(
+  hand: readonly NormalizedLandmark[] | undefined,
+  mirrored: boolean,
+): "front" | "back" {
+  const wrist = hand?.[WRIST_LANDMARK_INDEX];
+  const index = hand?.[INDEX_MCP_INDEX];
+  const pinky = hand?.[PINKY_MCP_INDEX];
+  if (!wrist || !index || !pinky) return "front";
+  const ax = index.x - wrist.x;
+  const ay = index.y - wrist.y;
+  const bx = pinky.x - wrist.x;
+  const by = pinky.y - wrist.y;
+  let cross = ax * by - ay * bx;
+  if (mirrored) cross = -cross;
+  return cross > 0 ? "back" : "front";
+}
+
 export function handPerspectiveScale(
   hand: readonly NormalizedLandmark[] | undefined,
   width: number,
