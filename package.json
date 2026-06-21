@@ -4,6 +4,20 @@
   "description": "Realidad aumentada en el navegador: detección de mano con MediaPipe (en un Web Worker) y figuras 3D con Three.js.",
   "type": "module",
   "license": "MIT",
+  "author": "Damian Sire <damiansire@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/damiansire/artificial-intelligence-augmented-reality-figures.git"
+  },
+  "bugs": "https://github.com/damiansire/artificial-intelligence-augmented-reality-figures/issues",
+  "keywords": [
+    "augmented-reality",
+    "mediapipe",
+    "three-js",
+    "hand-tracking",
+    "webworker",
+    "computer-vision"
+  ],
   "sideEffects": [
     "**/*.css"
   ],
