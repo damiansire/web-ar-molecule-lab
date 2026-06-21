@@ -4,6 +4,9 @@
   "description": "Realidad aumentada en el navegador: detección de mano con MediaPipe (en un Web Worker) y figuras 3D con Three.js.",
   "type": "module",
   "license": "MIT",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
