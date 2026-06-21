@@ -503,14 +503,16 @@ export class ARScene {
     // la figura con su silueta → queda "por atrás".
     const hand0 = this.figure !== "none" ? this.hands[0] : undefined;
     if (hand0 && anchorOf(hand0)) {
-      // Señal de orientación: winding * lateralidad. Histéresis con zona muerta
+      // Señal de orientación = winding crudo del triángulo de la palma.
+      // NO usamos la lateralidad (handedness) de MediaPipe: parpadea Left↔Right
+      // con la mano quieta y eso invertía la orientación (el "todo troto").
+      // El winding en cambio es estable: negativo con la palma, positivo con el
+      // dorso (para la mano derecha del usuario). Histéresis con zona muerta
       // para no parpadear cuando la mano está casi de canto (señal ~0).
-      // (Signo calibrado: con el dorso a la cámara → dorso/back → ocluye.)
-      const handSign = this.handedness[0] === "Left" ? 1 : -1;
-      const signal = palmWinding(hand0) * handSign;
+      const signal = palmWinding(hand0);
       this.lastWinding = signal;
-      if (signal < -FACING_DEADZONE) this.facingBack = true;
-      else if (signal > FACING_DEADZONE) this.facingBack = false;
+      if (signal > FACING_DEADZONE) this.facingBack = true; // dorso a la cámara
+      else if (signal < -FACING_DEADZONE) this.facingBack = false; // palma
       // dentro de la zona muerta: se conserva el estado anterior
     }
 
