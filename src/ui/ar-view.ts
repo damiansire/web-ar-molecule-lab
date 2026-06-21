@@ -4,6 +4,7 @@
  */
 import { FigureSelector } from "./figure-selector";
 import { ARControls } from "./ar-controls";
+import { ICONS } from "./icons";
 
 // Asegura que los custom elements queden registrados aunque haya tree-shaking.
 void FigureSelector;
@@ -15,6 +16,7 @@ export interface ARView {
   canvas: HTMLCanvasElement;
   selector: FigureSelector;
   controls: ARControls;
+  capture: HTMLButtonElement;
 }
 
 export function arView(): ARView {
@@ -36,6 +38,12 @@ export function arView(): ARView {
   const controls = document.createElement("ar-controls") as ARControls;
   controls.className = "ar-controls-panel";
 
-  root.append(video, canvas, controls, selector);
-  return { root, video, canvas, selector, controls };
+  const capture = document.createElement("button");
+  capture.className = "ar-capture";
+  capture.innerHTML = ICONS.camera;
+  capture.title = "Sacar foto / Take photo";
+  capture.setAttribute("aria-label", "Sacar foto / Take photo");
+
+  root.append(video, canvas, controls, selector, capture);
+  return { root, video, canvas, selector, controls, capture };
 }
