@@ -44,8 +44,7 @@ export async function requestCamera(): Promise<MediaStream> {
 
 function reasonFromDomError(err: unknown): CameraErrorReason {
   if (err instanceof DOMException) {
-    if (err.name === "NotAllowedError" || err.name === "SecurityError")
-      return "denied";
+    if (err.name === "NotAllowedError" || err.name === "SecurityError") return "denied";
     if (err.name === "NotFoundError" || err.name === "OverconstrainedError")
       return "not-found";
   }

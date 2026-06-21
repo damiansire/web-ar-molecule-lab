@@ -41,6 +41,7 @@ npm install
 npm run dev        # servidor de desarrollo (Vite)
 npm test           # tests de dominio (Vitest)
 npm run typecheck  # TypeScript en modo estricto
+npm run format     # formatea con Prettier
 npm run build      # build de producción a dist/
 ```
 
