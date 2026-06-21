@@ -24,6 +24,10 @@ interface InitRequest {
   wasmBase: string;
   modelUrl: string;
   forceCpu: boolean;
+  // El hilo principal ya resolvió el gate por navegador (WebKit<17 → CPU) con la
+  // lógica testeada de ../domain/platform; acá sólo lo combinamos con el
+  // `hasWebGl2()` local del worker.
+  allowGpu: boolean;
 }
 interface FrameRequest {
   type: "frame";
@@ -69,41 +73,21 @@ function hasWebGl2(): boolean {
   }
 }
 
-// --- Detección de plataforma (espejo de ../domain/platform.ts; ver nota arriba
-// sobre por qué este archivo no puede importar). La lógica pura está testeada
-// allá; acá va inline para mantener el worker como script clásico. ---
-function isWebKit(userAgent: string): boolean {
-  if (/Chrome|Chromium|Edg\//.test(userAgent)) return false;
-  return /\bAppleWebKit\b/.test(userAgent) && /\bSafari\b/.test(userAgent);
-}
-
-/**
- * ¿Es seguro usar el delegate GPU? No alcanza con que exista WebGL2: WebKit
- * (Safari/iOS) recién soporta WebGL2 sobre OffscreenCanvas desde la versión 17;
- * antes, el delegate GPU dentro de un worker puede colgar. En navegadores
- * previos a v17 forzamos CPU.
- */
-function gpuAvailable(userAgent = navigator.userAgent): boolean {
-  if (!hasWebGl2()) return false;
-  if (isWebKit(userAgent)) {
-    const match = userAgent.match(/Version\/(\d+)[\d.]*.*\bSafari\b/);
-    return match ? Number(match[1]) >= 17 : false;
-  }
-  return true;
-}
-
 async function init(
   bundleUrl: string,
   wasmBase: string,
   modelUrl: string,
   forceCpu: boolean,
+  allowGpu: boolean,
 ): Promise<void> {
   const mp = await loadMediaPipe(bundleUrl);
   const fileset = await mp.FilesetResolver.forVisionTasks(wasmBase);
   // GPU es mucho más rápido, pero en algunos navegadores el delegate GPU dentro
-  // de un worker cuelga el hilo. Probamos WebGL2 y, si el hilo principal pide
-  // forceCpu (porque un intento previo no respondió a tiempo), usamos CPU.
-  const delegate = !forceCpu && gpuAvailable() ? "GPU" : "CPU";
+  // de un worker cuelga el hilo. El hilo principal ya resolvió el gate por
+  // navegador (`allowGpu`, lógica testeada en ../domain/platform); acá lo
+  // combinamos con el `hasWebGl2()` real del worker y con `forceCpu` (un intento
+  // previo de GPU que no respondió a tiempo).
+  const delegate = !forceCpu && allowGpu && hasWebGl2() ? "GPU" : "CPU";
   landmarker = await mp.HandLandmarker.createFromOptions(fileset, {
     baseOptions: { modelAssetPath: modelUrl, delegate },
     runningMode: "VIDEO",
@@ -139,7 +123,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   switch (msg.type) {
     case "init":
-      init(msg.bundleUrl, msg.wasmBase, msg.modelUrl, msg.forceCpu).catch(
+      init(msg.bundleUrl, msg.wasmBase, msg.modelUrl, msg.forceCpu, msg.allowGpu).catch(
         (err: unknown) => {
           post({
             type: "init-error",

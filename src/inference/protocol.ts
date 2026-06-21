@@ -12,6 +12,10 @@ export type WorkerRequest =
       wasmBase: string;
       modelUrl: string;
       forceCpu: boolean;
+      // El hilo principal decide la parte de la lógica que depende del navegador
+      // (WebKit<17 fuerza CPU) con `supportsGpuDelegate` de ../domain/platform
+      // —la versión testeada—. El worker sólo aporta su `hasWebGl2()` local.
+      allowGpu: boolean;
     }
   | { type: "frame"; bitmap: ImageBitmap; timestamp: number };
 
