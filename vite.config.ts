@@ -11,8 +11,9 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    // Three.js queda aislado en su propio chunk y se carga lazy (sólo al entrar
-    // a la vista AR), así que su tamaño es esperado y no una regresión.
-    chunkSizeWarningLimit: 600,
+    // Three.js (build WebGPU + TSL/node-materials) queda aislado en su propio
+    // chunk y se carga lazy (sólo al entrar a la vista AR), así que su tamaño es
+    // esperado y no una regresión. El bundle WebGPU es mayor que el core WebGL.
+    chunkSizeWarningLimit: 900,
   },
 });

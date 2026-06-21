@@ -1,12 +1,23 @@
 /**
- * Escena de Three.js que dibuja la figura 3D como overlay transparente sobre
+ * Escena de Three.js que dibuja las figuras 3D como overlay transparente sobre
  * el video. Usa una cámara ortográfica mapeada 1:1 a píxeles de pantalla
  * (origen arriba-izquierda, Y hacia abajo) para posicionar la figura
  * directamente con las coordenadas que devuelve `landmarkToScreen`.
  *
- * Maneja un pool de hasta MAX_FIGURES instancias (una por mano detectada). Las
- * geometrías y materiales se comparten entre instancias: todas se ven igual,
- * sólo cambia su posición/rotación/escala.
+ * Renderer: `WebGPURenderer` (de `three/webgpu`) con materiales de nodos (TSL).
+ * El mismo renderer corre sobre el backend WebGPU si el navegador lo soporta
+ * (`navigator.gpu`) o cae automáticamente al backend **WebGL2** vía
+ * `forceWebGL: true`. Los node-materials y el `InstancedMesh` funcionan igual en
+ * ambos backends, así que hay un único camino de render.
+ *
+ * Las figuras se dibujan con `InstancedMesh`: una sola geometría/material para N
+ * manos → 1 draw call para todas las figuras (+1 para sus sombras), en vez de un
+ * `Mesh` por mano. Los bordes (opcionales, off por defecto) usan un pool chico
+ * de `LineSegments` porque la topología de líneas no se instancia trivialmente.
+ *
+ * Hot loop near-zero-alloc: las escrituras de transform reusan un `Matrix4`/
+ * `Quaternion`/`Euler`/`Vector3` y structs `target`/`corner` preasignados; no se
+ * crean objetos por frame ni por figura.
  */
 import {
   AmbientLight,
@@ -14,24 +25,39 @@ import {
   BufferAttribute,
   BufferGeometry,
   CircleGeometry,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   DirectionalLight,
   DoubleSide,
   DynamicDrawUsage,
   EdgesGeometry,
-  LineBasicMaterial,
+  Euler,
+  InstancedMesh,
+  LineBasicNodeMaterial,
   LineSegments,
-  Mesh,
-  MeshBasicMaterial,
-  MeshStandardMaterial,
+  Matrix4,
+  MeshBasicNodeMaterial,
+  MeshStandardNodeMaterial,
   OrthographicCamera,
   PlaneGeometry,
+  Quaternion,
   Scene,
   SphereGeometry,
   TorusGeometry,
-  WebGLRenderer,
-} from "three";
+  Vector3,
+  WebGPURenderer,
+} from "three/webgpu";
+import {
+  cameraPosition,
+  color,
+  dot,
+  normalWorld,
+  oneMinus,
+  positionWorld,
+  pow,
+  uniform,
+} from "three/tsl";
 import type { FigureKind } from "../domain/figures";
 import {
   anchorOf,
@@ -46,12 +72,15 @@ import {
   isHeld,
   resolvePlacement,
 } from "../domain/placement";
+import { convexHull, fanTriangulate, type Pt } from "../domain/occluder";
+import { Vec3Smoother } from "../domain/smoothing";
 
 const BASE = 120; // tamaño base de la figura en píxeles
-const MAX_FIGURES = 2; // tope de manos simultáneas
+const MAX_FIGURES = 16; // tope de figuras simultáneas (InstancedMesh: 1 draw call)
 const PREVIEW_SCALE = 0.55; // tamaño de la figura cuando está en la esquina (preview)
 const HAND_GRACE_MS = 500; // tolerancia ante pérdidas breves de la mano (sin parpadear)
 const FACING_DEADZONE = 0.18; // zona muerta de la señal palma/dorso (anti-parpadeo)
+const HARD_HAND_CAP = 2; // MediaPipe detecta hasta 2 manos; el resto del pool queda inactivo
 
 function geometryFor(kind: FigureKind): BufferGeometry | null {
   switch (kind) {
@@ -72,84 +101,58 @@ function geometryFor(kind: FigureKind): BufferGeometry | null {
   }
 }
 
-interface Pt {
-  x: number;
-  y: number;
-}
-
-/** Envolvente convexa (monotone chain), CCW. Para la silueta del oclusor. */
-function convexHull(points: Pt[]): Pt[] {
-  const pts = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
-  if (pts.length < 3) return pts;
-  const cross = (o: Pt, a: Pt, b: Pt) =>
-    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-  const lower: Pt[] = [];
-  for (const p of pts) {
-    while (
-      lower.length >= 2 &&
-      cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0
-    )
-      lower.pop();
-    lower.push(p);
-  }
-  const upper: Pt[] = [];
-  for (let i = pts.length - 1; i >= 0; i--) {
-    const p = pts[i];
-    while (
-      upper.length >= 2 &&
-      cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0
-    )
-      upper.pop();
-    upper.push(p);
-  }
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
-}
-
-interface FigureInstance {
-  mesh: Mesh;
-  edges: LineSegments; // hijo del mesh (hereda transform y visibilidad)
-  shadow: Mesh; // suelto en la escena (no rota con la figura)
-  // Estado de suavizado: posición/escala actuales que persiguen al objetivo.
+/** Estado por figura del pool (suavizado, gracia, visibilidad). */
+interface FigureSlot {
+  smoother: Vec3Smoother; // suavizado predictivo (One-Euro) por figura
   x: number;
   y: number;
   s: number;
-  primed: boolean; // true una vez que tiene una posición real (para no interpolar desde 0,0)
-  // Última posición/escala conocida de la mano (para sostener ante pérdidas breves).
-  hx: number;
+  primed: boolean; // ya tiene una posición real (para no interpolar desde 0,0)
+  hx: number; // última posición/escala conocida de la mano (gracia)
   hy: number;
   hs: number;
-  lastSeen: number; // timestamp (ms) de la última detección de mano
+  lastSeen: number;
   everSeen: boolean;
+  visible: boolean;
 }
 
 export class ARScene {
-  private renderer: WebGLRenderer;
+  private renderer: WebGPURenderer;
   private scene = new Scene();
   private camera: OrthographicCamera;
+  /** Backend efectivo, para diagnóstico ("webgpu" o "webgl"). */
+  readonly backend: "webgpu" | "webgl";
 
-  private material = new MeshStandardMaterial({
-    color: 0xf45e61,
-    metalness: 0.25,
-    roughness: 0.35,
-  });
-  private edgeMaterial = new LineBasicMaterial({ color: 0x0b1020 });
-  private shadowMaterial = new MeshBasicMaterial({
+  /** Canvas efectivamente usado (puede diferir si hubo fallback de WebGPU a WebGL2). */
+  get canvas(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  // Uniform de color compartido por el node-material (color base de la figura).
+  private colorUniform = uniform(new Color(0xf45e61));
+  private material: MeshStandardNodeMaterial;
+  private edgeMaterial = new LineBasicNodeMaterial({ color: 0x0b1020 });
+  private shadowMaterial = new MeshBasicNodeMaterial({
     color: 0x000000,
     transparent: true,
     opacity: 0.28,
     depthWrite: false,
   });
 
-  private geo: BufferGeometry; // geometría actual, compartida por todos los mesh
+  private geo: BufferGeometry; // geometría actual, compartida por todas las instancias
   private edgeGeo: EdgesGeometry;
   private shadowGeo = new CircleGeometry(BASE * 0.55, 40);
-  private instances: FigureInstance[] = [];
+
+  // InstancedMesh: una figura y una sombra por instancia, en un solo draw call.
+  private figures: InstancedMesh;
+  private shadows: InstancedMesh;
+  // Bordes: pool chico de LineSegments (líneas no se instancian trivialmente).
+  private edges: LineSegments[] = [];
+  private slots: FigureSlot[] = [];
 
   // Oclusor: silueta de la mano que sólo escribe profundidad (sin color), para
   // esconder la figura "por detrás" cuando el dorso de la mano da a la cámara.
-  private occluderMesh: Mesh;
+  private occluderMesh: InstancedMesh; // 1 instancia; usado como malla dinámica simple
   private occluderPos = new Float32Array(21 * 3);
   private occluderIdx = new Uint16Array((21 - 2) * 3);
   private occluderGeo = new BufferGeometry();
@@ -170,13 +173,30 @@ export class ARScene {
   private multiHand = false;
   private running = false;
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new WebGLRenderer({
+  // Scratch reusable del hot loop (alloc-free).
+  private mat = new Matrix4();
+  private quat = new Quaternion();
+  private euler = new Euler();
+  private posVec = new Vector3();
+  private sclVec = new Vector3();
+  private hidden = new Matrix4().makeScale(0, 0, 0); // instancia "apagada"
+  private target = { show: false, x: 0, y: 0, s: 0 }; // struct objetivo reusado
+  private corner = { x: 0, y: 0, s: 0 }; // struct esquina reusado
+  private occluderScratch: Pt[] = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
+
+  /**
+   * Construcción: usar `await ARScene.create(canvas)` en vez del constructor.
+   * `WebGPURenderer` requiere `await renderer.init()` antes de renderizar, lo que
+   * no se puede hacer en un constructor síncrono.
+   */
+  private constructor(canvas: HTMLCanvasElement, preferWebGPU: boolean) {
+    this.renderer = new WebGPURenderer({
       canvas,
       alpha: true,
       antialias: true,
-      preserveDrawingBuffer: true, // permite leer el canvas para "sacar foto"
+      forceWebGL: !preferWebGPU, // sin WebGPU → backend WebGL2
     });
+    this.backend = preferWebGPU ? "webgpu" : "webgl";
     this.renderer.setClearColor(0x000000, 0); // fondo transparente: se ve el video
     const { clientWidth: w, clientHeight: h } = canvas;
     this.camera = new OrthographicCamera(0, w, 0, h, -1000, 1000);
@@ -186,21 +206,29 @@ export class ARScene {
     key.position.set(0.5, -1, 1);
     this.scene.add(key);
 
+    this.material = this.buildFigureMaterial();
+
     this.geo = geometryFor("cube") ?? new BoxGeometry(BASE, BASE, BASE);
     this.edgeGeo = new EdgesGeometry(this.geo);
 
+    // InstancedMesh de figuras y sombras (un draw call cada uno para N figuras).
+    this.figures = new InstancedMesh(this.geo, this.material, MAX_FIGURES);
+    this.figures.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.figures.frustumCulled = false;
+    this.shadows = new InstancedMesh(this.shadowGeo, this.shadowMaterial, MAX_FIGURES);
+    this.shadows.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.shadows.frustumCulled = false;
+    this.shadows.renderOrder = -1; // sombras detrás de las figuras
+    this.scene.add(this.shadows, this.figures);
+
     for (let i = 0; i < MAX_FIGURES; i++) {
-      const mesh = new Mesh(this.geo, this.material);
       const edges = new LineSegments(this.edgeGeo, this.edgeMaterial);
-      edges.visible = this.edgesEnabled;
-      mesh.add(edges);
-      const shadow = new Mesh(this.shadowGeo, this.shadowMaterial);
-      shadow.visible = false;
-      this.scene.add(mesh, shadow);
-      this.instances.push({
-        mesh,
-        edges,
-        shadow,
+      edges.visible = false;
+      edges.frustumCulled = false;
+      this.scene.add(edges);
+      this.edges.push(edges);
+      this.slots.push({
+        smoother: new Vec3Smoother({ predictSeconds: 0.045 }),
         x: 0,
         y: 0,
         s: 1,
@@ -210,8 +238,14 @@ export class ARScene {
         hs: 1,
         lastSeen: -Infinity,
         everSeen: false,
+        visible: false,
       });
+      // Arrancan apagadas (escala 0) hasta que el frame las posicione.
+      this.figures.setMatrixAt(i, this.hidden);
+      this.shadows.setMatrixAt(i, this.hidden);
     }
+    this.figures.instanceMatrix.needsUpdate = true;
+    this.shadows.instanceMatrix.needsUpdate = true;
 
     // Oclusor: malla dinámica (solo profundidad). Se dibuja primero y "tapa" la
     // figura que quede detrás, dejando ver el video (la mano) por encima.
@@ -221,14 +255,67 @@ export class ARScene {
     this.occluderGeo.setIndex(new BufferAttribute(this.occluderIdx, 1));
     // DoubleSide: la silueta puede quedar con winding invertido (pantalla Y
     // hacia abajo); sin esto se descartaría por backface culling y no ocluiría.
-    const occluderMat = new MeshBasicMaterial({ colorWrite: false, side: DoubleSide });
-    this.occluderMesh = new Mesh(this.occluderGeo, occluderMat);
+    const occluderMat = new MeshBasicNodeMaterial({ colorWrite: false, side: DoubleSide });
+    this.occluderMesh = new InstancedMesh(this.occluderGeo, occluderMat, 1);
+    this.occluderMesh.setMatrixAt(0, new Matrix4());
+    this.occluderMesh.instanceMatrix.needsUpdate = true;
     this.occluderMesh.frustumCulled = false;
-    this.occluderMesh.renderOrder = -1; // se dibuja antes que las figuras
+    this.occluderMesh.renderOrder = -2; // antes que sombras y figuras
     this.occluderMesh.visible = false;
     this.scene.add(this.occluderMesh);
 
     this.resize();
+  }
+
+  /**
+   * Crea la escena eligiendo backend: intenta WebGPU (`navigator.gpu`); si no hay
+   * adapter o la init de WebGPU falla, reintenta con backend WebGL2. Inicializa
+   * el renderer (async) antes de devolver.
+   */
+  static async create(canvas: HTMLCanvasElement): Promise<ARScene> {
+    const preferWebGPU = await ARScene.detectWebGPU();
+    if (preferWebGPU) {
+      try {
+        const scene = new ARScene(canvas, true);
+        await scene.renderer.init();
+        return scene;
+      } catch {
+        // El adapter existía pero la init de WebGPU falló (driver, feature, etc.).
+        // El canvas ya tomó un contexto WebGPU y no se puede reusar para WebGL2,
+        // así que lo reemplazamos por uno fresco en el DOM antes de reintentar.
+        canvas = replaceCanvas(canvas);
+      }
+    }
+    const scene = new ARScene(canvas, false);
+    await scene.renderer.init();
+    return scene;
+  }
+
+  /** ¿El navegador puede entregar un adapter WebGPU? (no fuerza el backend solo). */
+  private static async detectWebGPU(): Promise<boolean> {
+    const gpu = (navigator as Navigator & { gpu?: GPU }).gpu;
+    if (!gpu) return false;
+    try {
+      const adapter = await gpu.requestAdapter();
+      return adapter !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Material de nodos (TSL) de la figura: color base por uniform + un rim-light
+   * de fresnel sutil en el emissive (más brillo en los bordes mirando a cámara).
+   * Funciona idéntico en backend WebGPU y WebGL2.
+   */
+  private buildFigureMaterial(): MeshStandardNodeMaterial {
+    const mat = new MeshStandardNodeMaterial({ metalness: 0.25, roughness: 0.35 });
+    mat.colorNode = this.colorUniform;
+    // Fresnel: 1 en silueta, 0 de frente. Realza el contorno sin texturas.
+    const viewDir = cameraPosition.sub(positionWorld).normalize();
+    const fresnel = pow(oneMinus(dot(normalWorld, viewDir).clamp(0, 1)), 3.0);
+    mat.emissiveNode = color(this.colorUniform).mul(fresnel).mul(0.6);
+    return mat;
   }
 
   setFigure(kind: FigureKind): void {
@@ -241,10 +328,8 @@ export class ARScene {
     const oldEdgeGeo = this.edgeGeo;
     this.geo = geo;
     this.edgeGeo = new EdgesGeometry(geo);
-    for (const inst of this.instances) {
-      inst.mesh.geometry = this.geo;
-      inst.edges.geometry = this.edgeGeo;
-    }
+    this.figures.geometry = this.geo;
+    for (const e of this.edges) e.geometry = this.edgeGeo;
     oldGeo.dispose();
     oldEdgeGeo.dispose();
   }
@@ -276,6 +361,7 @@ export class ARScene {
   /** Color de la figura (acepta cualquier color CSS, ej. "#f45e61"). */
   setColor(color: string): void {
     this.material.color.set(color);
+    this.colorUniform.value.set(color);
   }
 
   /**
@@ -311,7 +397,8 @@ export class ARScene {
   /** Muestra/oculta las aristas (bordes) de la figura. */
   setEdges(enabled: boolean): void {
     this.edgesEnabled = enabled;
-    for (const inst of this.instances) inst.edges.visible = enabled;
+    // La visibilidad real por instancia se resuelve en el frame (según slot).
+    if (!enabled) for (const e of this.edges) e.visible = false;
   }
 
   /** Color de las aristas. */
@@ -324,7 +411,7 @@ export class ARScene {
     this.shadowEnabled = enabled;
   }
 
-  /** Dibujar figuras en todas las manos detectadas (hasta MAX_FIGURES). */
+  /** Dibujar figuras en todas las manos detectadas (hasta el tope). */
   setMultiHand(enabled: boolean): void {
     this.multiHand = enabled;
   }
@@ -334,12 +421,18 @@ export class ARScene {
    * profundidad por delante de la figura, para que ésta quede tapada.
    */
   private updateOccluder(hand: NormalizedLandmark[], w: number, h: number): void {
-    const sp: Pt[] = [];
+    const sp = this.occluderScratch;
+    let m = 0;
     for (const lm of hand) {
+      if (m >= sp.length) break;
       const p = landmarkToScreen(lm, w, h, this.mirrored);
-      sp.push({ x: p.x, y: p.y });
+      sp[m].x = p.x;
+      sp[m].y = p.y;
+      m++;
     }
-    const hull = convexHull(sp);
+    // convexHull aloca su resultado (≤21 puntos, 1 vez por frame sólo cuando hay
+    // oclusión activa); es un costo aceptado fuera del hot path de las figuras.
+    const hull = convexHull(sp.slice(0, m));
     const n = hull.length;
     if (n < 3) {
       this.occluderMesh.visible = false;
@@ -350,12 +443,7 @@ export class ARScene {
       this.occluderPos[i * 3 + 1] = hull[i].y;
       this.occluderPos[i * 3 + 2] = 10; // por delante de la figura (z=0)
     }
-    let t = 0;
-    for (let k = 1; k < n - 1; k++) {
-      this.occluderIdx[t++] = 0;
-      this.occluderIdx[t++] = k;
-      this.occluderIdx[t++] = k + 1;
-    }
+    const t = fanTriangulate(n, this.occluderIdx);
     (this.occluderGeo.getAttribute("position") as BufferAttribute).needsUpdate = true;
     const idx = this.occluderGeo.getIndex();
     if (idx) idx.needsUpdate = true;
@@ -386,6 +474,31 @@ export class ARScene {
     this.renderer.setAnimationLoop(null);
   }
 
+  /**
+   * Fuerza un render sincrónico para que el contenido del canvas sea legible
+   * justo a continuación (para "sacar la foto"). Evita depender de
+   * `preserveDrawingBuffer` (que ya no existe en WebGPURenderer y costaba una
+   * copia por frame en WebGL — P-1 resuelto): se renderiza explícitamente y se
+   * lee el canvas en el mismo tick.
+   */
+  renderForCapture(): HTMLCanvasElement {
+    this.renderer.render(this.scene, this.camera);
+    return this.renderer.domElement;
+  }
+
+  /** Compone la matriz de instancia (translate * rotate(spin) * scale) en `this.mat`. */
+  private composeMatrix(x: number, y: number, s: number, rotate: boolean): Matrix4 {
+    this.posVec.set(x, y, 0);
+    if (rotate) {
+      this.euler.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
+      this.quat.setFromEuler(this.euler);
+    } else {
+      this.quat.identity();
+    }
+    this.sclVec.set(s, s, s);
+    return this.mat.compose(this.posVec, this.quat, this.sclVec);
+  }
+
   private frame(time: number): void {
     const w = this.renderer.domElement.clientWidth || 640;
     const h = this.renderer.domElement.clientHeight || 480;
@@ -394,80 +507,125 @@ export class ARScene {
     // Acumulamos el ángulo (rad/s) en vez de derivarlo de `time`, así cambiar
     // la velocidad no produce un salto brusco en la rotación.
     this.spin += dt * this.rotationSpeed;
-    const maxFigures = this.multiHand ? MAX_FIGURES : 1;
+    const maxFigures = this.multiHand ? HARD_HAND_CAP : 1;
 
-    // Suavizado exponencial independiente del framerate: la figura "persigue"
-    // el objetivo en vez de saltar, así se ve fluida aunque la inferencia
-    // llegue a 15-25 fps (la cámara/render van a 60).
-    const smooth = 1 - Math.exp(-dt * 18);
+    let figuresDirty = false;
+    let shadowsDirty = false;
 
-    for (let i = 0; i < this.instances.length; i++) {
-      const inst = this.instances[i];
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i];
       const allow = this.figure !== "none" && i < maxFigures;
       const hand = allow ? this.hands[i] : undefined;
       const anchor = anchorOf(hand);
 
-      // Sin figura elegida o instancia no usada: ocultar.
+      // Sin figura elegida o instancia no usada: apagar (escala 0).
       if (!allow) {
-        inst.mesh.visible = false;
-        inst.shadow.visible = false;
-        inst.primed = false;
+        if (slot.visible) {
+          this.figures.setMatrixAt(i, this.hidden);
+          this.shadows.setMatrixAt(i, this.hidden);
+          figuresDirty = true;
+          shadowsDirty = true;
+          slot.visible = false;
+          slot.primed = false;
+          slot.smoother.reset();
+        }
+        if (this.edges[i].visible) this.edges[i].visible = false;
         continue;
       }
 
       // Si hay mano, actualizamos su última posición/escala conocidas.
       if (anchor) {
         const p = landmarkToScreen(anchor, w, h, this.mirrored);
-        inst.hx = p.x;
-        inst.hy = p.y;
+        slot.hx = p.x;
+        slot.hy = p.y;
         // Perspectiva: tamaño según la mano (cerca = grande, lejos = chica),
         // por el tamaño elegido en el slider.
-        inst.hs = handPerspectiveScale(hand, w, h) * this.sizeScale;
-        inst.lastSeen = time;
-        inst.everSeen = true;
+        slot.hs = handPerspectiveScale(hand, w, h) * this.sizeScale;
+        slot.lastSeen = time;
+        slot.everSeen = true;
       }
 
       // Objetivo de la figura (lógica pura): sobre la mano, sostenida por la
       // gracia, o preview en la esquina; nunca desaparece de golpe.
       const cornerScale = PREVIEW_SCALE * this.sizeScale;
-      const target = resolvePlacement({
+      const c = cornerTarget(w, BASE, cornerScale);
+      this.corner.x = c.x;
+      this.corner.y = c.y;
+      this.corner.s = cornerScale;
+      const t = resolvePlacement({
         onHand:
-          anchor !== null || isHeld(inst.everSeen, inst.lastSeen, time, HAND_GRACE_MS),
-        hand: { x: inst.hx, y: inst.hy, s: inst.hs },
+          anchor !== null || isHeld(slot.everSeen, slot.lastSeen, time, HAND_GRACE_MS),
+        hand: { x: slot.hx, y: slot.hy, s: slot.hs },
         isPrimary: i === 0,
-        corner: { ...cornerTarget(w, BASE, cornerScale), s: cornerScale },
+        corner: this.corner,
       });
+      this.target.show = t.show;
+      this.target.x = t.x;
+      this.target.y = t.y;
+      this.target.s = t.s;
 
-      if (!target.show) {
-        inst.mesh.visible = false;
-        inst.shadow.visible = false;
-        inst.primed = false;
+      if (!this.target.show) {
+        if (slot.visible) {
+          this.figures.setMatrixAt(i, this.hidden);
+          this.shadows.setMatrixAt(i, this.hidden);
+          figuresDirty = true;
+          shadowsDirty = true;
+          slot.visible = false;
+          slot.primed = false;
+          slot.smoother.reset();
+        }
+        if (this.edges[i].visible) this.edges[i].visible = false;
         continue;
       }
 
-      inst.mesh.visible = true; // las aristas (hijas) heredan la visibilidad
-      inst.shadow.visible = this.shadowEnabled;
+      slot.visible = true;
 
-      // Snap sólo en el primer frame (para no deslizar desde 0,0); después
-      // siempre interpolamos → transición continua mano <-> esquina.
-      if (!inst.primed) {
-        inst.x = target.x;
-        inst.y = target.y;
-        inst.s = target.s;
-        inst.primed = true;
+      // Suavizado predictivo (One-Euro): el target se filtra/extrapola in-place.
+      // Snap sólo en el primer frame (para no deslizar desde 0,0).
+      if (!slot.primed) {
+        slot.x = this.target.x;
+        slot.y = this.target.y;
+        slot.s = this.target.s;
+        slot.smoother.reset();
+        slot.primed = true;
       } else {
-        inst.x += (target.x - inst.x) * smooth;
-        inst.y += (target.y - inst.y) * smooth;
-        inst.s += (target.s - inst.s) * smooth;
+        // Adoptamos el target crudo y dejamos que el filtro One-Euro lo suavice
+        // y extrapole in-place sobre el propio slot (alloc-free).
+        slot.x = this.target.x;
+        slot.y = this.target.y;
+        slot.s = this.target.s;
+        slot.smoother.filterInto(slot, dt);
       }
 
-      inst.mesh.position.set(inst.x, inst.y, 0);
-      inst.mesh.scale.setScalar(inst.s);
-      inst.mesh.rotation.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
-      // Sombra: elipse plana debajo de la figura, sin rotar.
-      inst.shadow.position.set(inst.x, inst.y + BASE * 0.55 * inst.s, -2);
-      inst.shadow.scale.set(inst.s, inst.s * 0.4, inst.s);
+      // Figura: translate * rotate(spin) * scale.
+      this.figures.setMatrixAt(i, this.composeMatrix(slot.x, slot.y, slot.s, true));
+      figuresDirty = true;
+
+      // Sombra: elipse plana debajo de la figura, sin rotar (escala Y achatada).
+      this.posVec.set(slot.x, slot.y + BASE * 0.55 * slot.s, -2);
+      this.quat.identity();
+      this.sclVec.set(slot.s, slot.s * 0.4, slot.s);
+      this.shadows.setMatrixAt(i, this.mat.compose(this.posVec, this.quat, this.sclVec));
+      shadowsDirty = true;
+
+      // Bordes (pool por instancia): sólo cuando están activados.
+      const edge = this.edges[i];
+      if (this.edgesEnabled) {
+        edge.visible = true;
+        edge.position.set(slot.x, slot.y, 0);
+        edge.scale.setScalar(slot.s);
+        this.euler.set(this.spin * 0.9, this.spin * 1.1, this.spin * 0.5);
+        edge.quaternion.setFromEuler(this.euler);
+      } else if (edge.visible) {
+        edge.visible = false;
+      }
     }
+
+    // Visibilidad de los InstancedMesh: las sombras se apagan globalmente si el
+    // usuario no las quiere (las instancias quedan en escala 0 igualmente).
+    this.shadows.visible = this.shadowEnabled;
+    if (figuresDirty) this.figures.instanceMatrix.needsUpdate = true;
+    if (shadowsDirty) this.shadows.instanceMatrix.needsUpdate = true;
 
     // Oclusión: si la mano principal está con el dorso hacia la cámara, tapamos
     // la figura con su silueta → queda "por atrás".
@@ -502,10 +660,31 @@ export class ARScene {
     this.edgeGeo.dispose();
     this.shadowGeo.dispose();
     this.occluderGeo.dispose();
-    (this.occluderMesh.material as MeshBasicMaterial).dispose();
+    this.figures.dispose();
+    this.shadows.dispose();
+    this.occluderMesh.dispose();
+    (this.occluderMesh.material as MeshBasicNodeMaterial).dispose();
     this.material.dispose();
     this.edgeMaterial.dispose();
     this.shadowMaterial.dispose();
     this.renderer.dispose();
   }
+}
+
+/**
+ * Reemplaza un canvas tainted (que ya tomó un contexto WebGPU) por un clon fresco
+ * en su misma posición del DOM, copiando id/clases/atributos. Devuelve el nuevo
+ * canvas para que el renderer WebGL2 pueda tomar su contexto sin conflicto.
+ */
+function replaceCanvas(old: HTMLCanvasElement): HTMLCanvasElement {
+  const fresh = document.createElement("canvas");
+  fresh.id = old.id;
+  fresh.className = old.className;
+  fresh.width = old.width;
+  fresh.height = old.height;
+  for (const { name, value } of Array.from(old.attributes)) {
+    if (name !== "id" && name !== "class") fresh.setAttribute(name, value);
+  }
+  old.replaceWith(fresh);
+  return fresh;
 }

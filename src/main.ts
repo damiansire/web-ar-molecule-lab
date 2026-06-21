@@ -140,14 +140,15 @@ async function renderAR(): Promise<void> {
 
   const view = arView();
 
-  // Crear el renderer puede fallar si el navegador no tiene WebGL: lo manejamos
-  // con gracia en vez de dejar la app en blanco.
+  // Crear el renderer puede fallar si el navegador no tiene ni WebGPU ni WebGL2:
+  // lo manejamos con gracia en vez de dejar la app en blanco. `ARScene.create`
+  // intenta WebGPU y cae automáticamente a WebGL2 (puede reemplazar el canvas).
   let created: ARScene;
   try {
-    created = new ARScene(view.canvas);
+    created = await ARScene.create(view.canvas);
   } catch {
     cleanup();
-    showFatal("Tu navegador no pudo iniciar WebGL, necesario para el 3D.");
+    showFatal("Tu navegador no pudo iniciar WebGPU ni WebGL2, necesarios para el 3D.");
     return;
   }
 
@@ -193,9 +194,13 @@ async function renderAR(): Promise<void> {
 
   view.capture.addEventListener("click", () => {
     const c = view.controls.getState();
+    // Render explícito en este tick: el canvas queda legible sin depender de
+    // preserveDrawingBuffer. El canvas puede haber sido reemplazado por el
+    // fallback WebGPU→WebGL2, por eso lo tomamos del propio renderer.
+    const glCanvas = scene?.renderForCapture() ?? view.canvas;
     capturePhoto({
       video: view.video,
-      glCanvas: view.canvas,
+      glCanvas,
       mirrored: c.mirrored,
       background: c.bgEnabled ? c.bgColor : null,
     });
