@@ -1,53 +1,32 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!--
-      Content-Security-Policy (defensa en profundidad). Acota de dónde se puede
-      cargar y ejecutar código en una app cuyo pitch es "el video nunca sale del
-      dispositivo": ningún frame de cámara se envía a la red (sólo se descargan
-      assets estáticos de MediaPipe). Orígenes permitidos, justificados:
-        - script-src: el bundle propio + Google Analytics (gtag) + 'wasm-unsafe-eval'
-          (WASM de MediaPipe) + blob: (el worker carga el bundle CJS de MediaPipe
-          desde un Blob URL mismo-origen; ver hand-landmarker.worker.ts).
-        - worker-src blob:: el Worker clásico se instancia desde un Blob/URL local.
-        - connect-src: descarga del bundle CJS (jsDelivr), del WASM (jsDelivr) y del
-          modelo .task (storage.googleapis.com), más telemetría de GA.
-        - img-src/media-src blob: data:: el <video> de la cámara y la "foto" PNG.
-      Nota SRI: NO se aplica SRI a gtag.js (Google lo sirve mutable, sin hash
-      estable) ni al bundle de MediaPipe (se ejecuta vía importScripts de un Blob,
-      donde el atributo integrity no aplica). Mitigación: el pin de versión exacto
-      en config.ts + esta CSP que restringe orígenes. Para SRI real, self-hostear
-      los assets de MediaPipe (ruta ya documentada en config.ts).
-    -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: https://www.googletagmanager.com; worker-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://storage.googleapis.com https://www.googletagmanager.com https://www.google-analytics.com https://*.analytics.google.com; img-src 'self' blob: data:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; frame-ancestors 'none'"
-    />
-
-    <!-- Google Analytics. Sin SRI: gtag.js es mutable (ver nota de CSP). -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-ELNQT5K3ND"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
-      }
-      gtag("js", new Date());
-      gtag("config", "G-ELNQT5K3ND");
-    </script>
-
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-    />
-    <meta
-      name="description"
-      content="Realidad aumentada en el navegador: detección de mano con MediaPipe (en Web Worker) y figuras 3D con Three.js."
-    />
-    <title>AR Hand Figures</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="preconnect" href="https://storage.googleapis.com" crossorigin />
+    <link rel="dns-prefetch" href="https://cdn.jsdelivr.net" />
+    <link rel="dns-prefetch" href="https://storage.googleapis.com" />
+    <title>Molecule Lab — build molecules with your hands</title>
   </head>
   <body>
-    <div id="app"></div>
+    <canvas id="stage"></canvas>
+    <video id="cam" playsinline muted></video>
+
+    <div id="overlay">
+      <div class="card">
+        <div class="logo">🧪</div>
+        <h1>Molecule&nbsp;Lab</h1>
+        <p class="lead">Enable your camera to play.</p>
+        <button id="start" type="button">Enable camera</button>
+        <p class="privacy">🔒 Runs on your device · your camera never leaves it</p>
+        <p class="hint" id="status">Warming up…</p>
+      </div>
+    </div>
+
+    <aside id="info" class="hidden"></aside>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

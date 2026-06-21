@@ -1,53 +1,21 @@
 {
-  "name": "ar-hand-figures",
-  "version": "1.0.0",
-  "description": "Realidad aumentada en el navegador: detección de mano con MediaPipe (en un Web Worker) y figuras 3D con Three.js.",
+  "name": "molecule-lab",
+  "private": true,
+  "version": "0.0.0",
   "type": "module",
-  "license": "MIT",
-  "author": "Damian Sire <damiansire@gmail.com>",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/damiansire/artificial-intelligence-augmented-reality-figures.git"
-  },
-  "bugs": "https://github.com/damiansire/artificial-intelligence-augmented-reality-figures/issues",
-  "keywords": [
-    "augmented-reality",
-    "mediapipe",
-    "three-js",
-    "hand-tracking",
-    "webworker",
-    "computer-vision"
-  ],
-  "sideEffects": [
-    "**/*.css"
-  ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "smoke:webgpu": "node scripts/webgpu-smoke.mjs",
-    "smoke:webgpu:chrome": "node scripts/webgpu-smoke-chrome.mjs",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
-  },
-  "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.35",
-    "three": "^0.184.0"
+    "test:watch": "vitest"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
-    "@types/three": "^0.184.1",
-    "eslint": "^10.5.0",
-    "eslint-config-prettier": "^10.1.8",
-    "globals": "^17.6.0",
-    "prettier": "^3.8.4",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.61.1",
-    "vite": "^8.0.16",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12",
     "vitest": "^4.1.9"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35"
   }
 }
