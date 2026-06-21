@@ -144,10 +144,8 @@ export class ARScene {
 
   private figure: FigureKind = "cube";
   private hands: NormalizedLandmark[][] = [];
-  private handedness: string[] = [];
   private occlusionEnabled = true;
   private facingBack = false; // estado con histéresis (palma/dorso) de la mano 0
-  private lastWinding = 0; // última señal de orientación (debug)
 
   // Controles ajustables por el usuario.
   private mirrored = true;
@@ -234,9 +232,8 @@ export class ARScene {
     oldEdgeGeo.dispose();
   }
 
-  setHands(hands: NormalizedLandmark[][], handedness: string[] = []): void {
+  setHands(hands: NormalizedLandmark[][]): void {
     this.hands = hands;
-    this.handedness = handedness;
   }
 
   /** Activa/desactiva la oclusión (figura por detrás al dar vuelta la mano). */
@@ -347,23 +344,6 @@ export class ARScene {
     if (idx) idx.needsUpdate = true;
     this.occluderGeo.setDrawRange(0, t);
     this.occluderMesh.visible = true;
-  }
-
-  /** Señal de orientación de la mano 0 (sólo para depuración/calibración). */
-  debugFacing(): {
-    handedness: string | null;
-    signal: number;
-    facing: "front" | "back";
-    occluding: boolean;
-    landmarks: NormalizedLandmark[] | null;
-  } {
-    return {
-      handedness: this.handedness[0] ?? null,
-      signal: Math.round(this.lastWinding * 1000) / 1000,
-      facing: this.facingBack ? "back" : "front",
-      occluding: this.occluderMesh.visible,
-      landmarks: this.hands[0] ?? null,
-    };
   }
 
   /** Estado de la primera figura (sólo para depuración/tests manuales). */
@@ -510,7 +490,6 @@ export class ARScene {
       // dorso (para la mano derecha del usuario). Histéresis con zona muerta
       // para no parpadear cuando la mano está casi de canto (señal ~0).
       const signal = palmWinding(hand0);
-      this.lastWinding = signal;
       if (signal > FACING_DEADZONE) this.facingBack = true; // dorso a la cámara
       else if (signal < -FACING_DEADZONE) this.facingBack = false; // palma
       // dentro de la zona muerta: se conserva el estado anterior
