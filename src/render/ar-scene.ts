@@ -147,6 +147,7 @@ export class ARScene {
   private handedness: string[] = [];
   private occlusionEnabled = true;
   private facingBack = false; // estado con histéresis (palma/dorso) de la mano 0
+  private lastWinding = 0; // última señal de orientación (debug)
 
   // Controles ajustables por el usuario.
   private mirrored = true;
@@ -348,6 +349,23 @@ export class ARScene {
     this.occluderMesh.visible = true;
   }
 
+  /** Señal de orientación de la mano 0 (sólo para depuración/calibración). */
+  debugFacing(): {
+    handedness: string | null;
+    signal: number;
+    facing: "front" | "back";
+    occluding: boolean;
+    landmarks: NormalizedLandmark[] | null;
+  } {
+    return {
+      handedness: this.handedness[0] ?? null,
+      signal: Math.round(this.lastWinding * 1000) / 1000,
+      facing: this.facingBack ? "back" : "front",
+      occluding: this.occluderMesh.visible,
+      landmarks: this.hands[0] ?? null,
+    };
+  }
+
   /** Estado de la primera figura (sólo para depuración/tests manuales). */
   debugFigure(): {
     x: number;
@@ -490,6 +508,7 @@ export class ARScene {
       // (Signo calibrado: con el dorso a la cámara → dorso/back → ocluye.)
       const handSign = this.handedness[0] === "Left" ? 1 : -1;
       const signal = palmWinding(hand0) * handSign;
+      this.lastWinding = signal;
       if (signal < -FACING_DEADZONE) this.facingBack = true;
       else if (signal > FACING_DEADZONE) this.facingBack = false;
       // dentro de la zona muerta: se conserva el estado anterior
