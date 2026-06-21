@@ -8,6 +8,7 @@
 import type { NormalizedLandmark } from "../domain/hand-tracking";
 import type { WorkerRequest, WorkerResponse } from "./protocol";
 import { MEDIAPIPE } from "../config";
+import { supportsGpuDelegate } from "../domain/platform";
 
 export type HandsListener = (hands: NormalizedLandmark[][]) => void;
 
@@ -87,6 +88,9 @@ export class HandTracker {
         wasmBase: MEDIAPIPE.wasmBase,
         modelUrl: MEDIAPIPE.handLandmarkerModel,
         forceCpu,
+        // Gate por navegador (la lógica testeada): el worker confirma luego con
+        // su `hasWebGl2()` real, por eso acá asumimos WebGL2 presente.
+        allowGpu: supportsGpuDelegate(navigator.userAgent, true),
       };
       this.worker.postMessage(req);
     });
