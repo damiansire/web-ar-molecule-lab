@@ -7,6 +7,52 @@ import { ELEMENTS, type ChemElement, type Molecule } from './chemistry';
 
 const TWO_PI = Math.PI * 2;
 
+// ---------------------------------------------------------------------------
+// Cache de sprites de esfera
+// ---------------------------------------------------------------------------
+// El gradiente radial + el símbolo de cada átomo son idénticos frame a frame:
+// solo cambian de posición y escala. Crear un `createRadialGradient` por átomo
+// y por frame era el mayor costo del render (decenas por frame). En su lugar
+// rasterizamos cada esfera UNA vez a un canvas offscreen de alta resolución y
+// después la estampamos escalada con `drawImage` (mucho más barato).
+const SPRITE_R = 160; // radio de la esfera en el sprite base (px)
+const SPRITE_PAD = 6; // margen para que el antialias del borde no se recorte
+const spriteCache = new Map<string, HTMLCanvasElement>();
+
+function sphereSprite(el: ChemElement, withLabel: boolean): HTMLCanvasElement {
+  const key = `${el.symbol}:${withLabel ? 1 : 0}`;
+  const cached = spriteCache.get(key);
+  if (cached) return cached;
+
+  const c = document.createElement('canvas');
+  const center = SPRITE_R + SPRITE_PAD;
+  c.width = c.height = center * 2;
+  const g = c.getContext('2d')!;
+
+  const grad = g.createRadialGradient(
+    center - SPRITE_R * 0.35, center - SPRITE_R * 0.35, SPRITE_R * 0.1,
+    center, center, SPRITE_R,
+  );
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.25, el.color);
+  grad.addColorStop(1, shade(el.color, -0.45));
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(center, center, SPRITE_R, 0, TWO_PI);
+  g.fill();
+
+  if (withLabel) {
+    g.fillStyle = '#05060a';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = `800 ${SPRITE_R * 0.95}px system-ui, sans-serif`;
+    g.fillText(el.symbol, center, center + SPRITE_R * 0.04);
+  }
+
+  spriteCache.set(key, c);
+  return c;
+}
+
 /** Esfera con gradiente + símbolo. Base de átomos y moléculas. */
 function drawSphere(
   ctx: CanvasRenderingContext2D,
@@ -16,22 +62,10 @@ function drawSphere(
   el: ChemElement,
   withLabel = true,
 ) {
-  const grad = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
-  grad.addColorStop(0, '#ffffff');
-  grad.addColorStop(0.25, el.color);
-  grad.addColorStop(1, shade(el.color, -0.45));
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, TWO_PI);
-  ctx.fill();
-
-  if (withLabel) {
-    ctx.fillStyle = '#05060a';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = `800 ${r * 0.95}px system-ui, sans-serif`;
-    ctx.fillText(el.symbol, cx, cy + r * 0.04);
-  }
+  const sprite = sphereSprite(el, withLabel);
+  // El sprite mapea su radio SPRITE_R -> r; el margen escala con él.
+  const half = (SPRITE_R + SPRITE_PAD) * (r / SPRITE_R);
+  ctx.drawImage(sprite, cx - half, cy - half, half * 2, half * 2);
 }
 
 /**
