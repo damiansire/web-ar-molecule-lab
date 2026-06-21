@@ -79,14 +79,20 @@ function convexHull(points: Pt[]): Pt[] {
     (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
   const lower: Pt[] = [];
   for (const p of pts) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0)
+    while (
+      lower.length >= 2 &&
+      cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0
+    )
       lower.pop();
     lower.push(p);
   }
   const upper: Pt[] = [];
   for (let i = pts.length - 1; i >= 0; i--) {
     const p = pts[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0)
+    while (
+      upper.length >= 2 &&
+      cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0
+    )
       upper.pop();
     upper.push(p);
   }
@@ -346,24 +352,6 @@ export class ARScene {
     this.occluderMesh.visible = true;
   }
 
-  /** Estado de la primera figura (sólo para depuración/tests manuales). */
-  debugFigure(): {
-    x: number;
-    y: number;
-    visible: boolean;
-    occluding: boolean;
-  } | null {
-    const i = this.instances[0];
-    return i
-      ? {
-          x: Math.round(i.x),
-          y: Math.round(i.y),
-          visible: i.mesh.visible,
-          occluding: this.occluderMesh.visible,
-        }
-      : null;
-  }
-
   /** Ajusta el renderer y la cámara al tamaño real del canvas. */
   resize(): void {
     const canvas = this.renderer.domElement;
@@ -482,7 +470,8 @@ export class ARScene {
     // Oclusión: si la mano principal está con el dorso hacia la cámara, tapamos
     // la figura con su silueta → queda "por atrás".
     const hand0 = this.figure !== "none" ? this.hands[0] : undefined;
-    if (hand0 && anchorOf(hand0)) {
+    const hasHand0 = anchorOf(hand0) !== null;
+    if (hand0 && hasHand0) {
       // Señal de orientación = winding crudo del triángulo de la palma.
       // NO usamos la lateralidad (handedness) de MediaPipe: parpadea Left↔Right
       // con la mano quieta y eso invertía la orientación (el "todo troto").
@@ -490,12 +479,13 @@ export class ARScene {
       // dorso (para la mano derecha del usuario). Histéresis con zona muerta
       // para no parpadear cuando la mano está casi de canto (señal ~0).
       const signal = palmWinding(hand0);
-      if (signal > FACING_DEADZONE) this.facingBack = true; // dorso a la cámara
+      if (signal > FACING_DEADZONE)
+        this.facingBack = true; // dorso a la cámara
       else if (signal < -FACING_DEADZONE) this.facingBack = false; // palma
       // dentro de la zona muerta: se conserva el estado anterior
     }
 
-    if (hand0 && anchorOf(hand0) && this.occlusionEnabled && this.facingBack) {
+    if (hand0 && hasHand0 && this.occlusionEnabled && this.facingBack) {
       this.updateOccluder(hand0, w, h);
     } else {
       this.occluderMesh.visible = false;
