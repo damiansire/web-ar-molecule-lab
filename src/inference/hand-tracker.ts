@@ -9,13 +9,16 @@ import type { NormalizedLandmark } from "../domain/hand-tracking";
 import type { WorkerRequest, WorkerResponse } from "./protocol";
 import { MEDIAPIPE } from "../config";
 import { supportsGpuDelegate } from "../domain/platform";
+import { BackPressure } from "./back-pressure";
 
 export type HandsListener = (hands: NormalizedLandmark[][]) => void;
 
 export class HandTracker {
   private worker!: Worker;
-  private busy = false;
+  // Back-pressure de un solo cuadro en vuelo (lógica pura testeada).
+  private gate = new BackPressure();
   private ready = false;
+  private disposed = false;
   private listener: HandsListener | null = null;
   /** Delegate efectivamente usado, para diagnóstico. */
   delegate: "GPU" | "CPU" | null = null;
@@ -39,6 +42,7 @@ export class HandTracker {
     return this.attempt(false, 15000).catch(() => {
       this.worker.terminate(); // pudo quedar colgado en la init de GPU
       this.createWorker();
+      this.gate.reset(); // worker nuevo: no hay nada en vuelo
       return this.attempt(true, 30000);
     });
   }
@@ -105,11 +109,13 @@ export class HandTracker {
    * lo descarta (mejor saltear cuadros que acumular latencia).
    */
   async track(source: HTMLVideoElement, timestamp: number): Promise<void> {
-    if (!this.ready || this.busy) return;
+    if (!this.ready || !this.gate.tryAcquire()) return; // dropea si hay uno en vuelo
     const vw = source.videoWidth;
     const vh = source.videoHeight;
-    if (!vw || !vh) return; // todavía no hay cuadro de video
-    this.busy = true;
+    if (!vw || !vh) {
+      this.gate.release(); // todavía no hay cuadro de video: liberamos el gate
+      return;
+    }
     try {
       // Reducimos el cuadro a ~320px en el lado mayor (preservando aspecto)
       // antes de mandarlo al worker: el detector no necesita más resolución y
@@ -120,26 +126,35 @@ export class HandTracker {
         resizeHeight: Math.round(vh * scale),
         resizeQuality: "low",
       });
+      // Carrera con dispose(): si el tracker se descartó mientras esperábamos el
+      // bitmap, NO lo posteamos a un worker muerto (se fugaría sin .close()).
+      // Lo cerramos acá y soltamos el gate (K-2).
+      if (this.disposed) {
+        bitmap.close();
+        this.gate.release();
+        return;
+      }
       const req: WorkerRequest = { type: "frame", bitmap, timestamp };
       this.worker.postMessage(req, [bitmap]);
     } catch {
-      this.busy = false;
+      this.gate.release();
     }
   }
 
   private onResult = (event: MessageEvent<WorkerResponse>) => {
     const msg = event.data;
     if (msg.type === "result") {
-      this.busy = false;
+      this.gate.release();
       this.listener?.(msg.hands);
     } else if (msg.type === "detect-error") {
       // El cuadro en vuelo falló en el worker: liberamos el back-pressure para
       // no quedar trabados, y dejamos que el próximo cuadro reintente.
-      this.busy = false;
+      this.gate.release();
     }
   };
 
   dispose(): void {
+    this.disposed = true;
     this.worker.terminate();
   }
 }
