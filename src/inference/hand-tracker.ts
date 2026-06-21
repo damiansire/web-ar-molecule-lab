@@ -128,6 +128,10 @@ export class HandTracker {
     if (msg.type === "result") {
       this.busy = false;
       this.listener?.(msg.hands);
+    } else if (msg.type === "detect-error") {
+      // El cuadro en vuelo falló en el worker: liberamos el back-pressure para
+      // no quedar trabados, y dejamos que el próximo cuadro reintente.
+      this.busy = false;
     }
   };
 

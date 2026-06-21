@@ -120,6 +120,15 @@ function detect(bitmap: ImageBitmap, timestamp: number): void {
   try {
     const result = landmarker.detectForVideo(bitmap, timestamp);
     post({ type: "result", timestamp, hands: result.landmarks ?? [] });
+  } catch (err: unknown) {
+    // Si la detección falla (pérdida de contexto WebGL, OOM/WASM, bitmap
+    // inválido) avisamos al cliente para que baje `busy`; si no, el
+    // back-pressure se trabaría para siempre y la detección se congelaría.
+    post({
+      type: "detect-error",
+      timestamp,
+      message: err instanceof Error ? err.message : String(err),
+    });
   } finally {
     // Liberamos el bitmap siempre, haya o no detección, para no perder memoria.
     bitmap.close();
