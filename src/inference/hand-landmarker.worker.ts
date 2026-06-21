@@ -60,13 +60,36 @@ async function loadMediaPipe(bundleUrl: string): Promise<any> {
   return g.module.exports;
 }
 
-/** ¿Hay WebGL2 vía OffscreenCanvas en este worker? (requisito del delegate GPU). */
-function gpuAvailable(): boolean {
+/** ¿Hay un contexto WebGL2 vía OffscreenCanvas en este worker? */
+function hasWebGl2(): boolean {
   try {
     return !!new OffscreenCanvas(1, 1).getContext("webgl2");
   } catch {
     return false;
   }
+}
+
+// --- Detección de plataforma (espejo de ../domain/platform.ts; ver nota arriba
+// sobre por qué este archivo no puede importar). La lógica pura está testeada
+// allá; acá va inline para mantener el worker como script clásico. ---
+function isWebKit(userAgent: string): boolean {
+  if (/Chrome|Chromium|Edg\//.test(userAgent)) return false;
+  return /\bAppleWebKit\b/.test(userAgent) && /\bSafari\b/.test(userAgent);
+}
+
+/**
+ * ¿Es seguro usar el delegate GPU? No alcanza con que exista WebGL2: WebKit
+ * (Safari/iOS) recién soporta WebGL2 sobre OffscreenCanvas desde la versión 17;
+ * antes, el delegate GPU dentro de un worker puede colgar. En navegadores
+ * previos a v17 forzamos CPU.
+ */
+function gpuAvailable(userAgent = navigator.userAgent): boolean {
+  if (!hasWebGl2()) return false;
+  if (isWebKit(userAgent)) {
+    const match = userAgent.match(/Version\/(\d+)[\d.]*.*\bSafari\b/);
+    return match ? Number(match[1]) >= 17 : false;
+  }
+  return true;
 }
 
 async function init(
