@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
@@ -19,9 +20,14 @@
     "three": "^0.184.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/three": "^0.184.1",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
     "prettier": "^3.8.4",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.61.1",
     "vite": "^8.0.16",
     "vitest": "^4.1.9"
   }
