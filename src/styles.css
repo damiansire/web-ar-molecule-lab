@@ -134,12 +134,73 @@ button.primary:disabled {
   pointer-events: none; /* los clics pasan al selector */
 }
 
+/* selector de experiencias (primario): barra inferior */
+.ar-experience {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: max(0.6rem, env(safe-area-inset-bottom));
+  z-index: 2;
+}
+
+/* selector de figuras: justo arriba del de experiencias (sólo en modo "figuras") */
 .ar-selector {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: max(1rem, env(safe-area-inset-bottom));
+  bottom: calc(max(0.6rem, env(safe-area-inset-bottom)) + 4.6rem);
   z-index: 2;
+}
+
+/* HUD de puntaje (arriba-izquierda), modo "atrapar" */
+.ar-hud {
+  position: absolute;
+  top: max(0.8rem, env(safe-area-inset-top));
+  left: max(0.8rem, env(safe-area-inset-left));
+  z-index: 4;
+  padding: 0.35rem 0.85rem;
+  font:
+    800 1.6rem/1 system-ui,
+    sans-serif;
+  color: #fff;
+  background: rgba(8, 12, 22, 0.82);
+  border: 2px solid var(--accent);
+  border-radius: 0.8rem;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.ar-hud::before {
+  content: "★ ";
+  color: var(--accent);
+}
+
+/* cartel con la instrucción del modo (toast arriba, no tapa la acción del centro) */
+.ar-hint {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  transform: translateX(-50%);
+  z-index: 2;
+  max-width: 80vw;
+  padding: 0.55rem 1rem;
+  text-align: center;
+  font:
+    600 0.95rem/1.3 system-ui,
+    sans-serif;
+  color: #fff;
+  background: rgba(17, 24, 39, 0.62);
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.ar-hint.show {
+  opacity: 1;
 }
 
 .ar-controls-panel {
