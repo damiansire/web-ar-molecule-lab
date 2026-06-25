@@ -1,5 +1,5 @@
 {
-  "name": "molecule-lab",
+  "name": "web-ar-molecule-lab",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -17,5 +17,6 @@
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35"
-  }
+  },
+  "description": "Interactive molecule laboratory using WebGPU and hand-tracking for augmented reality in the browser."
 }
