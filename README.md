@@ -1,3 +1,5 @@
+Work in progress, the usability is still a bit rough xD
+
 # 🧪 Molecule Lab
 
 **Build molecules with your hands.** An interactive, in-browser chemistry lab where
