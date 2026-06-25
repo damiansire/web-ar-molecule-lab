@@ -47,5 +47,8 @@ function cspMeta(): Plugin {
 }
 
 export default defineConfig({
+  // GitHub Pages sirve el proyecto bajo /web-ar-molecule-lab/, no en la raíz del
+  // dominio. Sin este base, los assets se referencian como /assets/... y dan 404.
+  base: '/web-ar-molecule-lab/',
   plugins: [cspMeta()],
 });
