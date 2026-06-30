@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchElement, resolveLang } from './voice';
+import { matchElement, matchCommand, matchProduct, resolveLang, type ProductLexEntry } from './voice';
 
 describe('matchElement', () => {
   it('reconoce nombres en español (con y sin acento)', () => {
@@ -17,6 +17,15 @@ describe('matchElement', () => {
     expect(matchElement('oxygen')).toBe('O');
     expect(matchElement('sodium')).toBe('Na');
     expect(matchElement('chlorine')).toBe('Cl');
+  });
+
+  it('reconoce los elementos nuevos (flúor, azufre, fósforo)', () => {
+    expect(matchElement('fluor')).toBe('F');
+    expect(matchElement('flúor')).toBe('F');
+    expect(matchElement('azufre')).toBe('S');
+    expect(matchElement('sulfur')).toBe('S');
+    expect(matchElement('fosforo')).toBe('P');
+    expect(matchElement('fósforo')).toBe('P');
   });
 
   it('ignora mayúsculas y palabras alrededor', () => {
@@ -38,6 +47,56 @@ describe('matchElement', () => {
   it('si se nombran varios, gana el último mencionado', () => {
     expect(matchElement('oxígeno hidrógeno')).toBe('H');
     expect(matchElement('primero cloro y después sodio')).toBe('Na');
+  });
+});
+
+describe('matchCommand', () => {
+  it('reconoce la orden de mezclar (español e inglés)', () => {
+    expect(matchCommand('mezclar')).toBe('mix');
+    expect(matchCommand('dale, mezcla todo')).toBe('mix');
+    expect(matchCommand('combinar')).toBe('mix');
+    expect(matchCommand('mix it')).toBe('mix');
+  });
+  it('devuelve null si no hay orden', () => {
+    expect(matchCommand('')).toBeNull();
+    expect(matchCommand('hidrogeno')).toBeNull();
+    expect(matchCommand('hola')).toBeNull();
+  });
+});
+
+describe('matchProduct', () => {
+  const products: ProductLexEntry[] = [
+    { id: 'H₂O', names: ['Agua', 'Water'] },
+    { id: 'CO₂', names: ['Dióxido de carbono', 'Carbon dioxide'] },
+    { id: 'NaCl', names: ['Sal', 'Salt'] },
+  ];
+
+  it('reconoce un producto por su nombre en español (con acento)', () => {
+    expect(matchProduct('quiero agua', products)).toBe('H₂O');
+    expect(matchProduct('dame sal', products)).toBe('NaCl');
+  });
+
+  it('reconoce nombres de varias palabras', () => {
+    expect(matchProduct('invocar dióxido de carbono', products)).toBe('CO₂');
+    expect(matchProduct('carbon dioxide please', products)).toBe('CO₂');
+  });
+
+  it('reconoce el nombre en inglés', () => {
+    expect(matchProduct('water', products)).toBe('H₂O');
+  });
+
+  it('devuelve null si no se nombra ningún producto descubierto', () => {
+    expect(matchProduct('', products)).toBeNull();
+    expect(matchProduct('hidrogeno', products)).toBeNull();
+    expect(matchProduct('agua', [])).toBeNull(); // nada descubierto aún
+  });
+
+  it('prefiere el match más largo/específico', () => {
+    const lex: ProductLexEntry[] = [
+      { id: 'H₂O', names: ['Agua'] },
+      { id: 'BRINE', names: ['Agua salada'] },
+    ];
+    expect(matchProduct('dame agua salada', lex)).toBe('BRINE');
   });
 });
 
