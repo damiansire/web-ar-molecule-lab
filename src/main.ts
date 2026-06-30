@@ -404,11 +404,14 @@ function updateInteraction(dtMs: number) {
     }
     st.dwellSymbol = null; st.dwellMs = 0;
 
-    // 2) Botón Mezclar (dwell).
+    // 2) Botón Mezclar (dwell). Solo cuenta si hay algo para mezclar y no estamos
+    //    en cooldown; si no, el botón se comporta como deshabilitado (sin spam).
     if (inRect(st.x, st.y, mix)) {
       st.depositMs = 0; st.clearMs = 0;
-      st.mixMs += dtMs;
-      if (st.mixMs >= MIX_DWELL_MS && cooldown === 0) { st.mixMs = 0; mezclar(); }
+      if (cauldronHasContents() && cooldown === 0) {
+        st.mixMs += dtMs;
+        if (st.mixMs >= MIX_DWELL_MS) { st.mixMs = 0; mezclar(); }
+      } else { st.mixMs = 0; }
       continue;
     }
     st.mixMs = 0;
@@ -443,11 +446,20 @@ function deposit(st: HandState) {
   st.held = null; st.count = 0;
 }
 
-/** Resuelve el cuenco con lo que tiene adentro. */
+/** ¿El cuenco tiene al menos un ingrediente? */
+function cauldronHasContents(): boolean {
+  return Object.keys(contents).some((k) => (contents[k] ?? 0) > 0);
+}
+
+/**
+ * Resuelve el cuenco con lo que tiene adentro. Los guards viven acá (no en el
+ * call-site) para que las dos vías de disparo —dwell del botón y voz "mezclar"—
+ * respeten el mismo cooldown y el mismo "no mezclar vacío".
+ */
 function mezclar() {
+  if (cooldown !== 0) return;
   const c = cauldronGeo();
-  const ids = Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0);
-  if (ids.length === 0) {
+  if (!cauldronHasContents()) {
     pushToast('Cuenco vacío', '#94a3b8', c.cx, c.cy);
     return;
   }
@@ -472,8 +484,7 @@ function mezclar() {
 
 /** Vacía el cuenco con feedback (botón Vaciar). */
 function clearCauldron() {
-  const ids = Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0);
-  if (ids.length === 0) return;
+  if (!cauldronHasContents()) return;
   const c = cauldronGeo();
   particles.burst(c.cx, c.cy, '#94a3b8', 24, 240 * DPR);
   pushToast('Vaciado', '#94a3b8', c.cx, c.cy);
@@ -765,16 +776,14 @@ function drawButton(rect: Rect, label: string, accent: string, progress: number,
 
 function drawMixButton() {
   const rect = mixButtonRect();
-  const has = Object.keys(contents).some((k) => (contents[k] ?? 0) > 0);
   const progress = Math.max(hands.Left.mixMs, hands.Right.mixMs) / MIX_DWELL_MS;
-  drawButton(rect, '✨ Mezclar', '#fbbf24', progress, has && cooldown === 0);
+  drawButton(rect, '✨ Mezclar', '#fbbf24', progress, cauldronHasContents() && cooldown === 0);
 }
 
 function drawClearButton() {
   const rect = clearButtonRect();
-  const has = Object.keys(contents).some((k) => (contents[k] ?? 0) > 0);
   const progress = Math.max(hands.Left.clearMs, hands.Right.clearMs) / CLEAR_DWELL_MS;
-  drawButton(rect, '🗑 Vaciar', '#f87171', progress, has);
+  drawButton(rect, '🗑 Vaciar', '#f87171', progress, cauldronHasContents());
 }
 
 function drawFloating() {
