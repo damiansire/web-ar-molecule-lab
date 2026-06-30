@@ -20,6 +20,9 @@ const WORD_TO_SYMBOL: Record<string, ElementSymbol> = {
   nitrogeno: 'N', nitrogen: 'N',
   sodio: 'Na', sodium: 'Na',
   cloro: 'Cl', chlorine: 'Cl',
+  fluor: 'F', fluorine: 'F',
+  azufre: 'S', sulfur: 'S', sulphur: 'S',
+  fosforo: 'P', phosphorus: 'P',
 };
 
 /**
@@ -34,6 +37,47 @@ export function matchElement(transcript: string): ElementSymbol | null {
     if (s) found = s;
   }
   return found;
+}
+
+// Palabras que disparan la orden de "mezclar" el cuenco (español + inglés).
+const MIX_WORDS = new Set(['mezclar', 'mezcla', 'mezclalo', 'combinar', 'combina', 'mix', 'brew']);
+
+/** Detecta la orden de mezclar el cuenco. Devuelve `'mix'` o `null`. */
+export function matchCommand(transcript: string): 'mix' | null {
+  const words = normalize(transcript).split(/[^a-z]+/).filter(Boolean);
+  return words.some((w) => MIX_WORDS.has(w)) ? 'mix' : null;
+}
+
+/** Un producto invocable por voz: su id (fórmula) y los nombres que lo nombran (ES/EN). */
+export interface ProductLexEntry {
+  id: string;
+  names: string[];
+}
+
+/** Normaliza a una secuencia de palabras separadas por espacios simples. */
+function normalizeWords(s: string): string {
+  return normalize(s).split(/[^a-z]+/).filter(Boolean).join(' ');
+}
+
+/**
+ * Busca en el texto el nombre de un producto descubierto (ES o EN). Soporta
+ * nombres de varias palabras ("dióxido de carbono") y, si hay varios candidatos,
+ * prefiere el match más largo/específico. Devuelve el id (fórmula) o null.
+ */
+export function matchProduct(transcript: string, products: ProductLexEntry[]): string | null {
+  const hay = ` ${normalizeWords(transcript)} `;
+  let bestId: string | null = null;
+  let bestLen = 0;
+  for (const p of products) {
+    for (const name of p.names) {
+      const needle = normalizeWords(name);
+      if (needle && hay.includes(` ${needle} `) && needle.length > bestLen) {
+        bestId = p.id;
+        bestLen = needle.length;
+      }
+    }
+  }
+  return bestId;
 }
 
 /**
@@ -89,10 +133,22 @@ function getCtor(): SpeechRecognitionCtor | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/** Lo que el jugador puede pedir por voz. */
+export interface VoiceHandlers {
+  /** Nombró un átomo. */
+  onElement?: (s: ElementSymbol) => void;
+  /** Pidió mezclar el cuenco. */
+  onCommand?: (c: 'mix') => void;
+  /** Invocó un producto ya descubierto (devuelve su fórmula/id). */
+  onProduct?: (id: string) => void;
+  /** Productos invocables ahora mismo (cambia a medida que se descubren). */
+  getProducts?: () => ProductLexEntry[];
+}
+
 export class VoiceRecognizer {
   private rec: SpeechRecognitionLike | null = null;
   private running = false;
-  private lastSymbol: ElementSymbol | null = null;
+  private lastKey: string | null = null;
   private lastAt = 0;
 
   /** ¿El navegador soporta reconocimiento de voz? */
@@ -101,15 +157,14 @@ export class VoiceRecognizer {
   }
 
   /**
-   * Empieza a escuchar. Llama `onElement` cuando se nombra un elemento.
+   * Empieza a escuchar y despacha intents al handler que corresponda. La
+   * precedencia es: orden ("mezclar") > producto descubierto > elemento.
    * Devuelve false si no hay soporte o no pudo arrancar.
    *
-   * `lang` por defecto se deriva del idioma efectivo de la UI: la interfaz es
-   * inglés (`<html lang="en">`) y el hint dice "say an element", así que el ASR
-   * debe escuchar en inglés o no transcribe "oxygen"/"sodium". Si se pasa `lang`
-   * explícito, manda ese.
+   * `lang` define el locale del ASR; el juego es español-first, así que se le
+   * pasa un locale español para transcribir bien "hidrógeno"/"mezclar".
    */
-  start(onElement: (s: ElementSymbol) => void, lang = defaultLang()): boolean {
+  start(handlers: VoiceHandlers, lang = defaultLang()): boolean {
     const Ctor = getCtor();
     if (!Ctor) return false;
 
@@ -119,16 +174,36 @@ export class VoiceRecognizer {
     rec.interimResults = true;
 
     rec.onresult = (e: SpeechEventLike) => {
-      const last = e.results[e.results.length - 1];
-      const sym = matchElement(last?.[0]?.transcript ?? '');
-      if (!sym) return;
+      const transcript = e.results[e.results.length - 1]?.[0]?.transcript ?? '';
+
+      // Resolvemos el intent con precedencia y armamos una clave para el anti-rebote.
+      let key: string | null = null;
+      let fire: (() => void) | null = null;
+      if (matchCommand(transcript)) {
+        key = 'cmd:mix';
+        fire = () => handlers.onCommand?.('mix');
+      } else {
+        const pid = handlers.getProducts ? matchProduct(transcript, handlers.getProducts()) : null;
+        if (pid) {
+          key = `prod:${pid}`;
+          fire = () => handlers.onProduct?.(pid);
+        } else {
+          const sym = matchElement(transcript);
+          if (sym) {
+            key = `el:${sym}`;
+            fire = () => handlers.onElement?.(sym);
+          }
+        }
+      }
+      if (!key || !fire) return;
+
       // Anti-rebote: los resultados intermedios disparan muchos eventos; no
-      // repetimos el mismo símbolo en menos de 1.2 s.
+      // repetimos el mismo intent en menos de 1.2 s.
       const now = performance.now();
-      if (sym === this.lastSymbol && now - this.lastAt < 1200) return;
-      this.lastSymbol = sym;
+      if (key === this.lastKey && now - this.lastAt < 1200) return;
+      this.lastKey = key;
       this.lastAt = now;
-      onElement(sym);
+      fire();
     };
     rec.onerror = (e: unknown) => {
       // Si el usuario niega el micrófono, dejamos de reintentar (evita un loop).
