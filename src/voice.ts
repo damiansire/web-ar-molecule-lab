@@ -240,8 +240,11 @@ export class VoiceRecognizer {
       const code = (e as { error?: string })?.error;
       if (code === 'not-allowed' || code === 'service-not-allowed') this.running = false;
     };
-    // El reconocimiento se corta solo tras silencios; lo reanudamos si seguimos activos.
-    rec.onend = () => { if (this.running) { try { rec.start(); } catch { /* ya activo */ } } };
+    // El reconocimiento se corta solo tras silencios; lo reanudamos si seguimos
+    // activos Y este sigue siendo el reconocedor vigente. El check `this.rec === rec`
+    // evita que un reconocedor reemplazado (p.ej. al cambiar de idioma en vivo) se
+    // reanime en su propio onend y queden dos corriendo en paralelo.
+    rec.onend = () => { if (this.running && this.rec === rec) { try { rec.start(); } catch { /* ya activo */ } } };
 
     this.rec = rec;
     this.running = true;
