@@ -28,6 +28,16 @@ describe('matchElement', () => {
     expect(matchElement('fósforo')).toBe('P');
   });
 
+  it('reconoce nombres en italiano y portugués', () => {
+    expect(matchElement('idrogeno')).toBe('H');   // it
+    expect(matchElement('ossigeno')).toBe('O');   // it
+    expect(matchElement('zolfo')).toBe('S');      // it
+    expect(matchElement('azoto')).toBe('N');      // it
+    expect(matchElement('hidrogênio')).toBe('H'); // pt
+    expect(matchElement('enxofre')).toBe('S');    // pt
+    expect(matchElement('oxigênio')).toBe('O');   // pt
+  });
+
   it('ignora mayúsculas y palabras alrededor', () => {
     expect(matchElement('dame OXÍGENO por favor')).toBe('O');
     expect(matchElement('quiero un poco de Sodio')).toBe('Na');
@@ -51,12 +61,36 @@ describe('matchElement', () => {
 });
 
 describe('matchCommand', () => {
-  it('reconoce la orden de mezclar (español e inglés)', () => {
-    expect(matchCommand('mezclar')).toBe('mix');
-    expect(matchCommand('dale, mezcla todo')).toBe('mix');
-    expect(matchCommand('combinar')).toBe('mix');
-    expect(matchCommand('mix it')).toBe('mix');
+  it('reconoce mezclar en los 4 idiomas', () => {
+    expect(matchCommand('mezclar')).toBe('mix');     // es
+    expect(matchCommand('mix it')).toBe('mix');      // en
+    expect(matchCommand('mescola tutto')).toBe('mix'); // it
+    expect(matchCommand('misturar')).toBe('mix');    // pt
   });
+
+  it('reconoce vaciar en los 4 idiomas', () => {
+    expect(matchCommand('vaciar')).toBe('clear');    // es
+    expect(matchCommand('empty')).toBe('clear');     // en
+    expect(matchCommand('svuota')).toBe('clear');    // it
+    expect(matchCommand('esvaziar')).toBe('clear');  // pt
+  });
+
+  it('reconoce la orden de depositar genérica', () => {
+    expect(matchCommand('echar')).toBe('deposit');
+    expect(matchCommand('soltar al cuenco')).toBe('deposit');
+    expect(matchCommand('drop')).toBe('deposit');
+    expect(matchCommand('jogar')).toBe('deposit');
+  });
+
+  it('reconoce depositar por mano (izquierda/derecha)', () => {
+    expect(matchCommand('izquierda')).toBe('deposit-left');
+    expect(matchCommand('mano derecha')).toBe('deposit-right');
+    expect(matchCommand('left')).toBe('deposit-left');
+    expect(matchCommand('destra')).toBe('deposit-right');
+    // la dirección gana sobre el depósito genérico
+    expect(matchCommand('echar a la izquierda')).toBe('deposit-left');
+  });
+
   it('devuelve null si no hay orden', () => {
     expect(matchCommand('')).toBeNull();
     expect(matchCommand('hidrogeno')).toBeNull();

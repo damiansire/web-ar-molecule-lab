@@ -4,13 +4,20 @@
  * Sin dependencias del DOM ni de la cámara: se testea aislado con Vitest.
  */
 
+import type { Lang } from './i18n';
+
 export type ElementSymbol = 'H' | 'O' | 'C' | 'N' | 'Na' | 'Cl' | 'F' | 'S' | 'P';
 
 export interface ChemElement {
   symbol: ElementSymbol;
+  /** Nombre en inglés. */
   name: string;
-  /** Nombre en español, para el HUD y el match de voz. */
+  /** Nombre en español. */
   nameEs: string;
+  /** Nombre en italiano. */
+  nameIt: string;
+  /** Nombre en portugués. */
+  namePt: string;
   /** Número atómico (protones). */
   atomicNumber: number;
   /** Color base para el render (hex). */
@@ -38,9 +45,14 @@ export type Composition = Partial<Record<ElementSymbol, number>>;
 
 export interface Molecule {
   formula: string;
+  /** Nombre en inglés. */
   name: string;
-  /** Nombre en español, para el HUD y el match de voz. */
+  /** Nombre en español. */
   nameEs: string;
+  /** Nombre en italiano. */
+  nameIt: string;
+  /** Nombre en portugués. */
+  namePt: string;
   color: string;
   /** Descripción breve: para qué se usa / por qué importa (en inglés). */
   description: string;
@@ -67,15 +79,15 @@ export interface ElementStack {
 // Catálogo de elementos
 // ---------------------------------------------------------------------------
 export const ELEMENTS: Record<ElementSymbol, ChemElement> = {
-  H: { symbol: 'H', name: 'Hydrogen', nameEs: 'Hidrógeno', atomicNumber: 1, color: '#7dd3fc', category: 'no-metal', radius: 0.3, shells: [1] },
-  O: { symbol: 'O', name: 'Oxygen', nameEs: 'Oxígeno', atomicNumber: 8, color: '#f87171', category: 'no-metal', radius: 0.42, shells: [2, 6] },
-  C: { symbol: 'C', name: 'Carbon', nameEs: 'Carbono', atomicNumber: 6, color: '#94a3b8', category: 'no-metal', radius: 0.45, shells: [2, 4] },
-  N: { symbol: 'N', name: 'Nitrogen', nameEs: 'Nitrógeno', atomicNumber: 7, color: '#818cf8', category: 'no-metal', radius: 0.42, shells: [2, 5] },
-  Na: { symbol: 'Na', name: 'Sodium', nameEs: 'Sodio', atomicNumber: 11, color: '#fbbf24', category: 'metal', radius: 0.55, shells: [2, 8, 1] },
-  Cl: { symbol: 'Cl', name: 'Chlorine', nameEs: 'Cloro', atomicNumber: 17, color: '#4ade80', category: 'halogeno', radius: 0.5, shells: [2, 8, 7] },
-  F: { symbol: 'F', name: 'Fluorine', nameEs: 'Flúor', atomicNumber: 9, color: '#a3e635', category: 'halogeno', radius: 0.38, shells: [2, 7] },
-  S: { symbol: 'S', name: 'Sulfur', nameEs: 'Azufre', atomicNumber: 16, color: '#facc15', category: 'no-metal', radius: 0.5, shells: [2, 8, 6] },
-  P: { symbol: 'P', name: 'Phosphorus', nameEs: 'Fósforo', atomicNumber: 15, color: '#fb923c', category: 'no-metal', radius: 0.5, shells: [2, 8, 5] },
+  H: { symbol: 'H', name: 'Hydrogen', nameEs: 'Hidrógeno', nameIt: 'Idrogeno', namePt: 'Hidrogênio', atomicNumber: 1, color: '#7dd3fc', category: 'no-metal', radius: 0.3, shells: [1] },
+  O: { symbol: 'O', name: 'Oxygen', nameEs: 'Oxígeno', nameIt: 'Ossigeno', namePt: 'Oxigênio', atomicNumber: 8, color: '#f87171', category: 'no-metal', radius: 0.42, shells: [2, 6] },
+  C: { symbol: 'C', name: 'Carbon', nameEs: 'Carbono', nameIt: 'Carbonio', namePt: 'Carbono', atomicNumber: 6, color: '#94a3b8', category: 'no-metal', radius: 0.45, shells: [2, 4] },
+  N: { symbol: 'N', name: 'Nitrogen', nameEs: 'Nitrógeno', nameIt: 'Azoto', namePt: 'Nitrogênio', atomicNumber: 7, color: '#818cf8', category: 'no-metal', radius: 0.42, shells: [2, 5] },
+  Na: { symbol: 'Na', name: 'Sodium', nameEs: 'Sodio', nameIt: 'Sodio', namePt: 'Sódio', atomicNumber: 11, color: '#fbbf24', category: 'metal', radius: 0.55, shells: [2, 8, 1] },
+  Cl: { symbol: 'Cl', name: 'Chlorine', nameEs: 'Cloro', nameIt: 'Cloro', namePt: 'Cloro', atomicNumber: 17, color: '#4ade80', category: 'halogeno', radius: 0.5, shells: [2, 8, 7] },
+  F: { symbol: 'F', name: 'Fluorine', nameEs: 'Flúor', nameIt: 'Fluoro', namePt: 'Flúor', atomicNumber: 9, color: '#a3e635', category: 'halogeno', radius: 0.38, shells: [2, 7] },
+  S: { symbol: 'S', name: 'Sulfur', nameEs: 'Azufre', nameIt: 'Zolfo', namePt: 'Enxofre', atomicNumber: 16, color: '#facc15', category: 'no-metal', radius: 0.5, shells: [2, 8, 6] },
+  P: { symbol: 'P', name: 'Phosphorus', nameEs: 'Fósforo', nameIt: 'Fosforo', namePt: 'Fósforo', atomicNumber: 15, color: '#fb923c', category: 'no-metal', radius: 0.5, shells: [2, 8, 5] },
 };
 
 export const ELEMENT_ORDER: ElementSymbol[] = ['H', 'O', 'C', 'N', 'S', 'P', 'F', 'Na', 'Cl'];
@@ -85,7 +97,7 @@ export const ELEMENT_ORDER: ElementSymbol[] = ['H', 'O', 'C', 'N', 'S', 'P', 'F'
 // ---------------------------------------------------------------------------
 export const MOLECULES: Molecule[] = [
   {
-    formula: 'H₂O', name: 'Water', nameEs: 'Agua', color: '#38bdf8',
+    formula: 'H₂O', name: 'Water', nameEs: 'Agua', nameIt: 'Acqua', namePt: 'Água', color: '#38bdf8',
     description: 'The basis of all known life. Covers about 71% of Earth and makes up most of your body.',
     composition: { H: 2, O: 1 },
     atoms: [
@@ -96,7 +108,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 }],
   },
   {
-    formula: 'CO₂', name: 'Carbon dioxide', nameEs: 'Dióxido de carbono', color: '#94a3b8',
+    formula: 'CO₂', name: 'Carbon dioxide', nameEs: 'Dióxido de carbono', nameIt: 'Anidride carbonica', namePt: 'Dióxido de carbono', color: '#94a3b8',
     description: 'Exhaled by animals, used by plants in photosynthesis, and a key greenhouse gas.',
     composition: { C: 1, O: 2 },
     atoms: [
@@ -107,7 +119,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 2 }, { a: 0, b: 2, order: 2 }],
   },
   {
-    formula: 'NH₃', name: 'Ammonia', nameEs: 'Amoníaco', color: '#a5b4fc',
+    formula: 'NH₃', name: 'Ammonia', nameEs: 'Amoníaco', nameIt: 'Ammoniaca', namePt: 'Amônia', color: '#a5b4fc',
     description: 'Used to make fertilizers that feed most of the world, and in cleaning products.',
     composition: { N: 1, H: 3 },
     atoms: [
@@ -119,7 +131,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 }, { a: 0, b: 3, order: 1 }],
   },
   {
-    formula: 'CH₄', name: 'Methane', nameEs: 'Metano', color: '#5eead4',
+    formula: 'CH₄', name: 'Methane', nameEs: 'Metano', nameIt: 'Metano', namePt: 'Metano', color: '#5eead4',
     description: 'The main component of natural gas — a common fuel and a potent greenhouse gas.',
     composition: { C: 1, H: 4 },
     atoms: [
@@ -135,7 +147,7 @@ export const MOLECULES: Molecule[] = [
     ],
   },
   {
-    formula: 'NaCl', name: 'Salt (sodium chloride)', nameEs: 'Sal', color: '#fcd34d',
+    formula: 'NaCl', name: 'Salt (sodium chloride)', nameEs: 'Sal', nameIt: 'Sale', namePt: 'Sal', color: '#fcd34d',
     description: 'Everyday table salt. Essential for life and used to season and preserve food.',
     composition: { Na: 1, Cl: 1 },
     atoms: [
@@ -145,7 +157,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }],
   },
   {
-    formula: 'HCl', name: 'Hydrochloric acid', nameEs: 'Ácido clorhídrico', color: '#86efac',
+    formula: 'HCl', name: 'Hydrochloric acid', nameEs: 'Ácido clorhídrico', nameIt: 'Acido cloridrico', namePt: 'Ácido clorídrico', color: '#86efac',
     description: 'Your stomach makes it to digest food. Also a workhorse acid in industry.',
     composition: { H: 1, Cl: 1 },
     atoms: [
@@ -155,7 +167,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }],
   },
   {
-    formula: 'H₂', name: 'Hydrogen gas', nameEs: 'Hidrógeno gaseoso', color: '#7dd3fc',
+    formula: 'H₂', name: 'Hydrogen gas', nameEs: 'Hidrógeno gaseoso', nameIt: 'Idrogeno gassoso', namePt: 'Hidrogênio gasoso', color: '#7dd3fc',
     description: 'The lightest gas and a clean fuel: burning it produces only water.',
     composition: { H: 2 },
     atoms: [
@@ -165,7 +177,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }],
   },
   {
-    formula: 'O₂', name: 'Oxygen gas', nameEs: 'Oxígeno gaseoso', color: '#f87171',
+    formula: 'O₂', name: 'Oxygen gas', nameEs: 'Oxígeno gaseoso', nameIt: 'Ossigeno gassoso', namePt: 'Oxigênio gasoso', color: '#f87171',
     description: 'The gas you breathe to stay alive — about 21% of the air around you.',
     composition: { O: 2 },
     atoms: [
@@ -175,7 +187,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 2 }],
   },
   {
-    formula: 'N₂', name: 'Nitrogen gas', nameEs: 'Nitrógeno gaseoso', color: '#818cf8',
+    formula: 'N₂', name: 'Nitrogen gas', nameEs: 'Nitrógeno gaseoso', nameIt: 'Azoto gassoso', namePt: 'Nitrogênio gasoso', color: '#818cf8',
     description: 'About 78% of the air. Inert and often used to keep food fresh.',
     composition: { N: 2 },
     atoms: [
@@ -185,7 +197,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 3 }],
   },
   {
-    formula: 'H₂O₂', name: 'Hydrogen peroxide', nameEs: 'Peróxido de hidrógeno', color: '#bae6fd',
+    formula: 'H₂O₂', name: 'Hydrogen peroxide', nameEs: 'Peróxido de hidrógeno', nameIt: 'Perossido di idrogeno', namePt: 'Peróxido de hidrogênio', color: '#bae6fd',
     description: 'A pale blue liquid used to disinfect wounds and bleach hair — water with one extra oxygen.',
     composition: { H: 2, O: 2 },
     atoms: [
@@ -197,7 +209,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 }, { a: 1, b: 3, order: 1 }],
   },
   {
-    formula: 'O₃', name: 'Ozone', nameEs: 'Ozono', color: '#fca5a5',
+    formula: 'O₃', name: 'Ozone', nameEs: 'Ozono', nameIt: 'Ozono', namePt: 'Ozônio', color: '#fca5a5',
     description: 'High in the atmosphere it shields us from UV rays; at ground level it is a pollutant.',
     composition: { O: 3 },
     atoms: [
@@ -208,7 +220,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 2 }, { a: 0, b: 2, order: 1 }],
   },
   {
-    formula: 'CO', name: 'Carbon monoxide', nameEs: 'Monóxido de carbono', color: '#cbd5e1',
+    formula: 'CO', name: 'Carbon monoxide', nameEs: 'Monóxido de carbono', nameIt: 'Monossido di carbonio', namePt: 'Monóxido de carbono', color: '#cbd5e1',
     description: 'A colorless, odorless and toxic gas from incomplete burning of fuels.',
     composition: { C: 1, O: 1 },
     atoms: [
@@ -218,7 +230,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 3 }],
   },
   {
-    formula: 'NO', name: 'Nitric oxide', nameEs: 'Óxido nítrico', color: '#c7d2fe',
+    formula: 'NO', name: 'Nitric oxide', nameEs: 'Óxido nítrico', nameIt: 'Ossido nitrico', namePt: 'Óxido nítrico', color: '#c7d2fe',
     description: 'A signaling molecule in your body that relaxes blood vessels and controls blood flow.',
     composition: { N: 1, O: 1 },
     atoms: [
@@ -228,7 +240,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 2 }],
   },
   {
-    formula: 'SO₂', name: 'Sulfur dioxide', nameEs: 'Dióxido de azufre', color: '#fde047',
+    formula: 'SO₂', name: 'Sulfur dioxide', nameEs: 'Dióxido de azufre', nameIt: 'Anidride solforosa', namePt: 'Dióxido de enxofre', color: '#fde047',
     description: 'A sharp-smelling gas from volcanoes and burning coal; used to preserve dried fruit.',
     composition: { S: 1, O: 2 },
     atoms: [
@@ -239,7 +251,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 2 }, { a: 0, b: 2, order: 2 }],
   },
   {
-    formula: 'H₂S', name: 'Hydrogen sulfide', nameEs: 'Sulfuro de hidrógeno', color: '#fef08a',
+    formula: 'H₂S', name: 'Hydrogen sulfide', nameEs: 'Sulfuro de hidrógeno', nameIt: 'Solfuro di idrogeno', namePt: 'Sulfeto de hidrogênio', color: '#fef08a',
     description: 'The "rotten egg" gas, toxic in high amounts and produced by decaying matter.',
     composition: { H: 2, S: 1 },
     atoms: [
@@ -250,7 +262,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 }],
   },
   {
-    formula: 'HF', name: 'Hydrogen fluoride', nameEs: 'Fluoruro de hidrógeno', color: '#bef264',
+    formula: 'HF', name: 'Hydrogen fluoride', nameEs: 'Fluoruro de hidrógeno', nameIt: 'Fluoruro di idrogeno', namePt: 'Fluoreto de hidrogênio', color: '#bef264',
     description: 'Dissolved in water it becomes hydrofluoric acid, used to etch glass and silicon.',
     composition: { H: 1, F: 1 },
     atoms: [
@@ -260,7 +272,7 @@ export const MOLECULES: Molecule[] = [
     bonds: [{ a: 0, b: 1, order: 1 }],
   },
   {
-    formula: 'PH₃', name: 'Phosphine', nameEs: 'Fosfina', color: '#fdba74',
+    formula: 'PH₃', name: 'Phosphine', nameEs: 'Fosfina', nameIt: 'Fosfina', namePt: 'Fosfina', color: '#fdba74',
     description: 'A toxic, flammable gas with a garlic-like smell, used in the semiconductor industry.',
     composition: { P: 1, H: 3 },
     atoms: [
@@ -275,7 +287,7 @@ export const MOLECULES: Molecule[] = [
   // --- Productos de 2º nivel (árbol de alquimia: se craftean combinando otras
   //     moléculas, no átomos sueltos). Ver ALCHEMY_RECIPES. ---
   {
-    formula: 'H₂CO₃', name: 'Carbonic acid', nameEs: 'Ácido carbónico', color: '#67e8f9',
+    formula: 'H₂CO₃', name: 'Carbonic acid', nameEs: 'Ácido carbónico', nameIt: 'Acido carbonico', namePt: 'Ácido carbônico', color: '#67e8f9',
     description: 'Forms when CO₂ dissolves in water — it is what makes soda fizzy and rain slightly acidic.',
     composition: { H: 2, C: 1, O: 3 }, compound: true,
     atoms: [
@@ -292,7 +304,7 @@ export const MOLECULES: Molecule[] = [
     ],
   },
   {
-    formula: 'NH₄Cl', name: 'Ammonium chloride', nameEs: 'Cloruro de amonio', color: '#c4b5fd',
+    formula: 'NH₄Cl', name: 'Ammonium chloride', nameEs: 'Cloruro de amonio', nameIt: 'Cloruro di ammonio', namePt: 'Cloreto de amônio', color: '#c4b5fd',
     description: 'A salt of ammonia and hydrochloric acid, used in fertilizers, batteries and cough medicine.',
     composition: { N: 1, H: 4, Cl: 1 }, compound: true,
     atoms: [
@@ -309,7 +321,7 @@ export const MOLECULES: Molecule[] = [
     ],
   },
   {
-    formula: 'H₂SO₃', name: 'Sulfurous acid', nameEs: 'Ácido sulfuroso', color: '#fef9c3',
+    formula: 'H₂SO₃', name: 'Sulfurous acid', nameEs: 'Ácido sulfuroso', nameIt: 'Acido solforoso', namePt: 'Ácido sulfuroso', color: '#fef9c3',
     description: 'Forms when sulfur dioxide dissolves in water; the chemistry behind acid rain.',
     composition: { H: 2, S: 1, O: 3 }, compound: true,
     atoms: [
@@ -326,7 +338,7 @@ export const MOLECULES: Molecule[] = [
     ],
   },
   {
-    formula: 'NH₄OH', name: 'Ammonium hydroxide', nameEs: 'Hidróxido de amonio', color: '#ddd6fe',
+    formula: 'NH₄OH', name: 'Ammonium hydroxide', nameEs: 'Hidróxido de amonio', nameIt: 'Idrossido di ammonio', namePt: 'Hidróxido de amônio', color: '#ddd6fe',
     description: 'Ammonia dissolved in water — the cloudy "ammonia" sold as a household cleaner.',
     composition: { N: 1, H: 5, O: 1 }, compound: true,
     atoms: [
@@ -458,15 +470,34 @@ export function brew(c: Cauldron): Molecule | null {
   return recipe ? BY_FORMULA[recipe.output] ?? null : null;
 }
 
-/** Etiqueta legible de un ingrediente (nombre en español si es producto). */
-export function ingredientLabel(id: IngredientId): string {
-  if (id in ELEMENTS) return ELEMENTS[id as ElementSymbol].nameEs;
-  return BY_FORMULA[id]?.nameEs ?? id;
+/** Algo con nombre en los 4 idiomas (elemento o molécula). */
+type Named = { name: string; nameEs: string; nameIt: string; namePt: string };
+
+/** Nombre de un elemento o molécula en el idioma dado (inglés por defecto). */
+export function localizedName(e: Named, lang: Lang): string {
+  switch (lang) {
+    case 'es': return e.nameEs;
+    case 'it': return e.nameIt;
+    case 'pt': return e.namePt;
+    default: return e.name;
+  }
+}
+
+/** Los 4 nombres de un elemento o molécula (para el match de voz multi-idioma). */
+export function allNames(e: Named): string[] {
+  return [e.name, e.nameEs, e.nameIt, e.namePt];
+}
+
+/** Etiqueta legible de un ingrediente en el idioma dado. */
+export function ingredientLabel(id: IngredientId, lang: Lang): string {
+  if (isElement(id)) return localizedName(ELEMENTS[id], lang);
+  const m = BY_FORMULA[id];
+  return m ? localizedName(m, lang) : id;
 }
 
 /** ¿Este ingrediente es un átomo (elemento de la tabla)? */
 export function isElement(id: IngredientId): id is ElementSymbol {
-  return id in ELEMENTS;
+  return Object.prototype.hasOwnProperty.call(ELEMENTS, id);
 }
 
 /** Molécula por fórmula, o undefined si no existe. */

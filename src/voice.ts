@@ -14,14 +14,15 @@ function normalize(s: string): string {
 // Palabras (español + inglés) → símbolo. A propósito NO mapeamos letras sueltas
 // ("o", "c", "n"...) porque chocan con palabras comunes y darían falsos positivos.
 const WORD_TO_SYMBOL: Record<string, ElementSymbol> = {
-  hidrogeno: 'H', hydrogen: 'H',
-  oxigeno: 'O', oxygen: 'O',
-  carbono: 'C', carbon: 'C',
-  nitrogeno: 'N', nitrogen: 'N',
+  // español · inglés · italiano · portugués
+  hidrogeno: 'H', hydrogen: 'H', idrogeno: 'H', hidrogenio: 'H',
+  oxigeno: 'O', oxygen: 'O', ossigeno: 'O', oxigenio: 'O',
+  carbono: 'C', carbon: 'C', carbonio: 'C',
+  nitrogeno: 'N', nitrogen: 'N', azoto: 'N', nitrogenio: 'N',
   sodio: 'Na', sodium: 'Na',
   cloro: 'Cl', chlorine: 'Cl',
-  fluor: 'F', fluorine: 'F',
-  azufre: 'S', sulfur: 'S', sulphur: 'S',
+  fluor: 'F', fluorine: 'F', fluoro: 'F',
+  azufre: 'S', sulfur: 'S', sulphur: 'S', zolfo: 'S', enxofre: 'S',
   fosforo: 'P', phosphorus: 'P',
 };
 
@@ -39,13 +40,39 @@ export function matchElement(transcript: string): ElementSymbol | null {
   return found;
 }
 
-// Palabras que disparan la orden de "mezclar" el cuenco (español + inglés).
-const MIX_WORDS = new Set(['mezclar', 'mezcla', 'mezclalo', 'combinar', 'combina', 'mix', 'brew']);
+/** Órdenes por voz: mezclar, vaciar, o depositar (genérico / mano izquierda / derecha). */
+export type VoiceCommand = 'mix' | 'clear' | 'deposit' | 'deposit-left' | 'deposit-right';
 
-/** Detecta la orden de mezclar el cuenco. Devuelve `'mix'` o `null`. */
-export function matchCommand(transcript: string): 'mix' | null {
+// Vocabulario por orden (es · en · it · pt). normalize() ya quitó acentos.
+const MIX_WORDS = new Set([
+  'mezclar', 'mezcla', 'mezclalo', 'combinar', 'combina',
+  'mix', 'brew', 'combine', 'mescola', 'mescolare', 'misturar', 'mistura',
+]);
+const CLEAR_WORDS = new Set([
+  'vaciar', 'vacia', 'vacialo', 'limpiar', 'limpia',
+  'empty', 'clear', 'svuota', 'svuotare', 'pulisci', 'esvaziar', 'esvazia', 'limpar',
+]);
+const DEPOSIT_WORDS = new Set([
+  'echar', 'echa', 'soltar', 'solta', 'tirar', 'tira', 'depositar', 'deposita', 'vaya',
+  'drop', 'metti', 'mettere', 'butta', 'lascia', 'jogar', 'joga',
+]);
+const LEFT_WORDS = new Set(['izquierda', 'left', 'sinistra', 'esquerda']);
+const RIGHT_WORDS = new Set(['derecha', 'right', 'destra', 'direita']);
+
+/**
+ * Detecta una orden de voz. Precedencia: dirección (izquierda/derecha) sobre el
+ * depósito genérico, y depósito/mezclar/vaciar entre sí. Devuelve `null` si no
+ * se nombró ninguna orden.
+ */
+export function matchCommand(transcript: string): VoiceCommand | null {
   const words = normalize(transcript).split(/[^a-z]+/).filter(Boolean);
-  return words.some((w) => MIX_WORDS.has(w)) ? 'mix' : null;
+  const has = (set: Set<string>) => words.some((w) => set.has(w));
+  if (has(LEFT_WORDS)) return 'deposit-left';
+  if (has(RIGHT_WORDS)) return 'deposit-right';
+  if (has(DEPOSIT_WORDS)) return 'deposit';
+  if (has(MIX_WORDS)) return 'mix';
+  if (has(CLEAR_WORDS)) return 'clear';
+  return null;
 }
 
 /** Un producto invocable por voz: su id (fórmula) y los nombres que lo nombran (ES/EN). */
@@ -97,6 +124,8 @@ export function resolveLang(raw: string | null | undefined): string {
   }
   if (base === 'es') return 'es-ES';
   if (base === 'en') return 'en-US';
+  if (base === 'it') return 'it-IT';
+  if (base === 'pt') return 'pt-BR';
   return 'en-US';
 }
 
@@ -137,8 +166,8 @@ function getCtor(): SpeechRecognitionCtor | null {
 export interface VoiceHandlers {
   /** Nombró un átomo. */
   onElement?: (s: ElementSymbol) => void;
-  /** Pidió mezclar el cuenco. */
-  onCommand?: (c: 'mix') => void;
+  /** Dio una orden (mezclar, vaciar, depositar…). */
+  onCommand?: (c: VoiceCommand) => void;
   /** Invocó un producto ya descubierto (devuelve su fórmula/id). */
   onProduct?: (id: string) => void;
   /** Productos invocables ahora mismo (cambia a medida que se descubren). */
@@ -179,9 +208,10 @@ export class VoiceRecognizer {
       // Resolvemos el intent con precedencia y armamos una clave para el anti-rebote.
       let key: string | null = null;
       let fire: (() => void) | null = null;
-      if (matchCommand(transcript)) {
-        key = 'cmd:mix';
-        fire = () => handlers.onCommand?.('mix');
+      const command = matchCommand(transcript);
+      if (command) {
+        key = `cmd:${command}`;
+        fire = () => handlers.onCommand?.(command);
       } else {
         const pid = handlers.getProducts ? matchProduct(transcript, handlers.getProducts()) : null;
         if (pid) {
@@ -210,8 +240,11 @@ export class VoiceRecognizer {
       const code = (e as { error?: string })?.error;
       if (code === 'not-allowed' || code === 'service-not-allowed') this.running = false;
     };
-    // El reconocimiento se corta solo tras silencios; lo reanudamos si seguimos activos.
-    rec.onend = () => { if (this.running) { try { rec.start(); } catch { /* ya activo */ } } };
+    // El reconocimiento se corta solo tras silencios; lo reanudamos si seguimos
+    // activos Y este sigue siendo el reconocedor vigente. El check `this.rec === rec`
+    // evita que un reconocedor reemplazado (p.ej. al cambiar de idioma en vivo) se
+    // reanime en su propio onend y queden dos corriendo en paralelo.
+    rec.onend = () => { if (this.running && this.rec === rec) { try { rec.start(); } catch { /* ya activo */ } } };
 
     this.rec = rec;
     this.running = true;
