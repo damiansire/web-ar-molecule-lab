@@ -1,27 +1,37 @@
 import './style.css';
 import {
-  combineStacks,
+  brew,
   recipeText,
+  findMolecule,
+  isElement,
+  ingredientLabel,
   ELEMENTS,
   ELEMENT_ORDER,
   MOLECULES,
   type ElementSymbol,
   type Molecule,
+  type Cauldron,
+  type IngredientId,
 } from './chemistry';
 import { HandTracker, LM, type Hand } from './hands';
 import { ParticleSystem } from './particles';
 import { drawAtom, drawMolecule } from './structure';
-import { VoiceRecognizer } from './voice';
+import { VoiceRecognizer, type ProductLexEntry } from './voice';
+import { createInventory } from './inventory';
 
 // ---------------------------------------------------------------------------
 // Constantes
 // ---------------------------------------------------------------------------
-const DWELL_MS = 850;
-const COOLDOWN_MS = 1500;
+const DWELL_MS = 850;        // agarrar un átomo de la paleta
+const DEPOSIT_MS = 320;      // soltar lo que sostenés dentro del cuenco
+const MIX_DWELL_MS = 900;    // botón "Mezclar" por dwell
+const CLEAR_DWELL_MS = 800;  // botón "Vaciar" por dwell
+const SHELF_DWELL_MS = 750;  // sacar un producto del estante por dwell
+const SHELF_MAX = 12;        // celdas visibles del estante (las más recientes)
+const COOLDOWN_MS = 1200;    // entre mezclas
 const MAX_COUNT = 6;
 const MAX_FLOATING = 10;
-
-type Mode = 'normal' | 'challenge';
+const VOICE_LANG = 'es-AR';  // el juego es español-first
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -34,20 +44,24 @@ const statusEl = document.querySelector<HTMLParagraphElement>('#status')!;
 const infoEl = document.querySelector<HTMLElement>('#info')!;
 const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 
-// Density del canvas: usamos el devicePixelRatio real, capeado a 2. Antes estaba
-// clavado en 1 (`min(dpr, 1)`), con lo que cada `* DPR` era un no-op y todo el
-// HUD (paleta, fórmulas, recetas, score), que se rasteriza como texto/vectores
-// directo en el canvas, se veía borroso en pantallas HiDPI/retina. Capear a 2
-// evita reventar el fill-rate en pantallas 3x sin perder nitidez perceptible.
-// Tradeoff: el blit del video de fondo cuesta más a DPR>1; lo aceptamos a cambio
-// de un HUD nítido (el video ya viene reescalado de una cámara ≤960px).
+// Density del canvas: usamos el devicePixelRatio real, capeado a 2, para que el
+// HUD (texto/vectores rasterizados directo en el canvas) no se vea borroso en
+// pantallas HiDPI sin reventar el fill-rate en pantallas 3x.
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+// Cache del layout de la paleta. Declarado ACÁ —antes de resize()— a propósito:
+// resize() corre en la evaluación del módulo y lo invalida, así que si la
+// declaración `let` quedara más abajo caería en la temporal dead zone y tiraría
+// "Cannot access 'tilesCache' before initialization", abortando todo main.ts.
+interface Tile { symbol: ElementSymbol; x: number; y: number; size: number; }
+let tilesCache: Tile[] | null = null;
 
 function resize() {
   canvas.width = window.innerWidth * DPR;
   canvas.height = window.innerHeight * DPR;
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
+  tilesCache = null; // el layout de la paleta depende del ancho
 }
 window.addEventListener('resize', resize);
 resize();
@@ -55,21 +69,15 @@ resize();
 // ---------------------------------------------------------------------------
 // Precarga del modelo (perezosa: recién en la primera intención del usuario)
 // ---------------------------------------------------------------------------
-// Antes `init()` corría en el top-level y bajaba varios MB de WASM + el .task de
-// MediaPipe desde CDNs de terceros apenas cargaba la página, ANTES de cualquier
-// consentimiento. En una app que se vende como privada/local, contactar terceros
-// sin que el usuario haya hecho click es discutible. Ahora la precarga se dispara
-// en el primer gesto de intención (hover/pointer sobre "Enable camera"), así
-// conservamos la latencia baja sin tocar la red hasta que el usuario va a jugar.
 const tracker = new HandTracker();
 let modelReady: Promise<boolean> | null = null;
 
 function preloadModel(): Promise<boolean> {
   if (!modelReady) {
-    statusEl.textContent = 'Warming up the model…';
+    statusEl.textContent = 'Preparando el modelo…';
     modelReady = tracker.init().then(
-      () => { statusEl.textContent = '✨ Ready — pick a mode'; return true; },
-      (err) => { console.error(err); statusEl.textContent = 'Model failed to load. Reload to retry.'; return false; },
+      () => { statusEl.textContent = '✨ Listo — tocá empezar'; return true; },
+      (err) => { console.error(err); statusEl.textContent = 'El modelo no cargó. Recargá para reintentar.'; return false; },
     );
   }
   return modelReady;
@@ -83,78 +91,68 @@ startBtn.addEventListener('focus', preloadModel, { once: true });
 // ---------------------------------------------------------------------------
 // Estado de juego
 // ---------------------------------------------------------------------------
-let mode: Mode = 'normal';
 let running = false;
 
 interface HandState {
   present: boolean; x: number; y: number;
-  held: ElementSymbol | null; count: number;
+  /** Lo que sostiene la mano: átomo o producto descubierto (o nada). */
+  held: IngredientId | null; count: number;
+  /** Progreso de dwell sobre un tile de la paleta. */
   dwellSymbol: ElementSymbol | null; dwellMs: number;
-  /** Progreso de dwell sobre el botón de modo (in-canvas). */
-  btnMs: number;
-  /** Progreso de dwell sobre la papelera (descartar lo que sostiene). */
-  trashMs: number;
+  /** Progreso de dwell para depositar en el cuenco. */
+  depositMs: number;
+  /** Progreso de dwell sobre el botón Mezclar. */
+  mixMs: number;
+  /** Progreso de dwell sobre el botón Vaciar. */
+  clearMs: number;
+  /** Producto del estante sobre el que se está haciendo dwell (o null). */
+  shelfId: IngredientId | null; shelfMs: number;
 }
 const makeHand = (): HandState => ({
-  present: false, x: 0, y: 0, held: null, count: 0, dwellSymbol: null, dwellMs: 0, btnMs: 0, trashMs: 0,
+  present: false, x: 0, y: 0, held: null, count: 0,
+  dwellSymbol: null, dwellMs: 0, depositMs: 0, mixMs: 0, clearMs: 0,
+  shelfId: null, shelfMs: 0,
 });
 type SlotName = 'Left' | 'Right';
 const hands: Record<SlotName, HandState> = { Left: makeHand(), Right: makeHand() };
 
-// Moléculas levitando (ambos modos). Posiciones en fracciones del canvas.
+// El cuenco de alquimia: multiset de ingredientes acumulados (átomos y/o productos).
+const contents: Cauldron = {};
+
+// Moléculas levitando tras una mezcla exitosa. Posiciones en fracciones del canvas.
 interface Floating { molecule: Molecule; x: number; y: number; vx: number; vy: number; rot: number; rotVel: number; }
 const floating: Floating[] = [];
 
-// Objetivos que caen (solo challenge).
-interface Target { molecule: Molecule; x: number; y: number; vy: number; }
-const targets: Target[] = [];
-
-// Texto efímero (+100 / No reaction).
+// Texto efímero (nombre del producto / "No reacciona").
 interface Toast { text: string; color: string; x: number; y: number; age: number; }
 const toasts: Toast[] = [];
 
-const discovered = new Set<string>(); // fórmulas formadas (normal)
-let score = 0;
-let combo = 0;
-let elapsed = 0; // s en challenge
-let spawnTimer = 0;
-let cooldown = 0;
-let modeSwitchCooldown = 0; // ms, evita re-toggles del botón de modo
+// Inventario persistente de productos descubiertos (fórmulas).
+const inventory = createInventory();
 
-const BTN_DWELL_MS = 1100;
-const TRASH_DWELL_MS = 650; // dwell para vaciar la mano en la papelera
+let cooldown = 0;
 
 const particles = new ParticleSystem();
 let audioCtx: AudioContext | null = null;
 let infoTimer: ReturnType<typeof setTimeout> | undefined;
 
-// Voz: nombrar un elemento lo hace aparecer en una mano libre.
+// Voz: nombrar un átomo lo trae a la mano; decir "mezclar" cocina el cuenco.
 const voice = new VoiceRecognizer();
 let voiceListening = false;
 
 // ---------------------------------------------------------------------------
-// Arranque por modo
+// Arranque
 // ---------------------------------------------------------------------------
-startBtn.addEventListener('click', () => start('normal'));
+startBtn.addEventListener('click', () => start());
 
-// Stream activo de la cámara: lo guardamos para poder soltar las pistas (apagar
-// la luz de la cámara) tanto en un error de arranque como en el teardown global.
 let camStream: MediaStream | null = null;
 
-async function start(chosen: Mode) {
-  mode = chosen;
+async function start() {
   startBtn.disabled = true;
   try {
-    statusEl.textContent = 'Requesting camera…';
-    // 960×540 alcanza de sobra para el tracking y abarata dibujar el fondo.
-    // frameRate ideal 30: evita que la cámara entregue a 15 fps en poca luz.
+    statusEl.textContent = 'Pidiendo la cámara…';
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: 'user',
-        width: { ideal: 960 },
-        height: { ideal: 540 },
-        frameRate: { ideal: 30 },
-      },
+      video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30 } },
       audio: false,
     });
     camStream = stream;
@@ -171,16 +169,17 @@ async function start(chosen: Mode) {
     lastTime = performance.now();
     requestAnimationFrame(loop);
 
-    // Escucha de voz (pide permiso de micrófono; si falla, el juego sigue por gestos).
-    // Solo intentamos si el navegador soporta SpeechRecognition: así no pedimos
-    // micrófono en vano ni mostramos el hint "say an element" donde no aplica.
-    voiceListening = VoiceRecognizer.supported && voice.start(giveElement);
+    // Escucha de voz (pide micrófono; si falla, se juega con gestos).
+    voiceListening = VoiceRecognizer.supported && voice.start({
+      onElement: giveIngredient,
+      onProduct: giveIngredient,
+      onCommand: () => mezclar(),
+      getProducts: productLexicon,
+    }, VOICE_LANG);
   } catch (err) {
     console.error(err);
-    // Si algo falló DESPUÉS de obtener la cámara (modelo no listo, AudioContext…),
-    // soltamos las pistas para no dejar la luz de la cámara prendida sobre un error.
     stopCamera();
-    statusEl.textContent = "Couldn't access the camera. Check permissions and reload.";
+    statusEl.textContent = 'No se pudo acceder a la cámara. Revisá permisos y recargá.';
     statusEl.classList.add('error');
     startBtn.disabled = false;
   }
@@ -195,10 +194,7 @@ function stopCamera() {
   video.srcObject = null;
 }
 
-/**
- * Teardown global de recursos sensibles de hardware. Idempotente: se dispara al
- * ocultar/cerrar la página para no dejar cámara, micrófono, worker ni audio vivos.
- */
+/** Teardown global: no deja cámara, micrófono, worker ni audio vivos. */
 function teardown() {
   running = false;
   stopCamera();
@@ -211,26 +207,9 @@ window.addEventListener('pagehide', teardown);
 
 function resetGame() {
   floating.length = 0;
-  targets.length = 0;
   toasts.length = 0;
-  discovered.clear();
-  score = 0; combo = 0; elapsed = 0; spawnTimer = 0; cooldown = 0;
-  if (mode === 'challenge') spawnTarget();
-}
-
-/** Alterna Explore ⇄ Challenge (disparado por el botón in-canvas). */
-function switchMode() {
-  mode = mode === 'normal' ? 'challenge' : 'normal';
-  hands.Left.btnMs = hands.Right.btnMs = 0;
-  modeSwitchCooldown = 1200;
-  infoEl.classList.add('hidden');
-  if (mode === 'challenge') {
-    targets.length = 0; toasts.length = 0;
-    score = 0; combo = 0; elapsed = 0; spawnTimer = 0;
-    spawnTarget();
-  } else {
-    targets.length = 0;
-  }
+  for (const k of Object.keys(contents)) delete contents[k];
+  cooldown = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,8 +217,6 @@ function switchMode() {
 // ---------------------------------------------------------------------------
 let lastTime = 0;
 
-// HUD de performance (solo DEV): FPS real, costo del frame en el hilo principal
-// y Hz de detección. Sirve para ver dónde está el cuello de botella en vivo.
 const SHOW_PERF = import.meta.env.DEV;
 let perfFps = 60;
 let perfFrameMs = 0;
@@ -255,24 +232,18 @@ function loop(now: number) {
   const time = now / 1000;
   const bodyStart = performance.now();
 
-  // La detección corre en un Web Worker: pump() no bloquea (manda el frame si el
-  // worker está libre) y leemos el último resultado disponible. Así el render
-  // —y el video de fondo— nunca esperan a la inferencia.
   if (video.readyState >= 2) tracker.pump(video, now);
   syncHands(tracker.hands);
 
   updateInteraction(dtMs);
   updateFloating(dt);
-  if (mode === 'challenge') updateChallenge(dt);
   updateToasts(dtMs);
   particles.update(dt);
   if (cooldown > 0) cooldown = Math.max(0, cooldown - dtMs);
-  if (modeSwitchCooldown > 0) modeSwitchCooldown = Math.max(0, modeSwitchCooldown - dtMs);
 
   render(time);
 
   if (SHOW_PERF) {
-    // EMA del FPS (a partir del delta de rAF) y del costo del frame.
     perfFps += ((1000 / Math.max(1, dtMs)) - perfFps) * 0.08;
     perfFrameMs += ((performance.now() - bodyStart) - perfFrameMs) * 0.08;
     perfHzAccum += dtMs;
@@ -323,47 +294,69 @@ function syncHands(detected: Hand[]) {
     st.y = tip.y * canvas.height;
   }
   for (const name of ['Left', 'Right'] as SlotName[]) {
-    if (!hands[name].present) { hands[name].dwellSymbol = null; hands[name].dwellMs = 0; }
+    if (!hands[name].present) resetDwell(hands[name]);
   }
 }
 
+function resetDwell(st: HandState) {
+  st.dwellSymbol = null; st.dwellMs = 0; st.depositMs = 0; st.mixMs = 0; st.clearMs = 0;
+  st.shelfId = null; st.shelfMs = 0;
+}
+
 // ---------------------------------------------------------------------------
-// Palette
+// Geometría de UI
 // ---------------------------------------------------------------------------
-interface Tile { symbol: ElementSymbol; x: number; y: number; size: number; }
-// Memo: el layout solo cambia con el tamaño del canvas, no cada frame.
-let tilesCache: Tile[] | null = null;
-let tilesCacheW = -1;
 function paletteTiles(): Tile[] {
-  if (tilesCache && tilesCacheW === canvas.width) return tilesCache;
+  if (tilesCache) return tilesCache;
   const n = ELEMENT_ORDER.length;
-  const size = Math.min(canvas.width / (n + 2), 132 * DPR);
-  const gap = size * 0.28;
+  const size = Math.min(canvas.width / (n + 2), 116 * DPR);
+  const gap = size * 0.24;
   const totalW = n * size + (n - 1) * gap;
   const startX = (canvas.width - totalW) / 2;
-  const y = size * 0.4;
+  const y = size * 0.34;
   tilesCache = ELEMENT_ORDER.map((symbol, i) => ({ symbol, x: startX + i * (size + gap), y, size }));
-  tilesCacheW = canvas.width;
   return tilesCache;
 }
 function tileUnder(px: number, py: number, tiles: Tile[]): Tile | null {
   return tiles.find((t) => px >= t.x && px <= t.x + t.size && py >= t.y && py <= t.y + t.size) ?? null;
 }
 
-/** Botón de modo in-canvas (top-left), seleccionable con la mano por dwell. */
-function modeButtonRect() {
-  const w = Math.min(canvas.width * 0.24, 260 * DPR);
-  const h = 64 * DPR;
-  const pad = 18 * DPR;
-  return { x: pad, y: pad, w, h };
+/** Cuenco central (círculo). */
+function cauldronGeo() {
+  const cx = canvas.width / 2;
+  const cy = canvas.height * 0.5;
+  const r = Math.min(canvas.width * 0.17, canvas.height * 0.26, 230 * DPR);
+  return { cx, cy, r };
 }
 
-/** Papelera (esquina inferior derecha): vacía la mano que la sostiene, por dwell. */
-function trashRect() {
-  const w = Math.min(canvas.width * 0.12, 116 * DPR);
-  const h = 76 * DPR;
-  const pad = 18 * DPR;
-  return { x: canvas.width - w - pad, y: canvas.height - h - pad, w, h };
+interface Rect { x: number; y: number; w: number; h: number; }
+function mixButtonRect(): Rect {
+  const c = cauldronGeo();
+  const w = Math.min(canvas.width * 0.22, 220 * DPR);
+  const h = 64 * DPR;
+  const gap = 14 * DPR;
+  return { x: c.cx - w - gap / 2, y: c.cy + c.r + 30 * DPR, w, h };
+}
+function clearButtonRect(): Rect {
+  const c = cauldronGeo();
+  const w = Math.min(canvas.width * 0.15, 150 * DPR);
+  const h = 64 * DPR;
+  const gap = 14 * DPR;
+  return { x: c.cx + gap / 2, y: c.cy + c.r + 30 * DPR, w, h };
+}
+function inRect(px: number, py: number, r: Rect): boolean {
+  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+/** Celdas del estante de inventario (los últimos SHELF_MAX productos descubiertos). */
+interface ShelfCell extends Rect { formula: string; }
+function shelfCells(): ShelfCell[] {
+  const list = inventory.list().slice(-SHELF_MAX);
+  const cell = 64 * DPR;
+  const gap = 10 * DPR;
+  const pad = 16 * DPR;
+  const y = canvas.height - cell - 22 * DPR;
+  return list.map((formula, i) => ({ formula, x: pad + i * (cell + gap), y, w: cell, h: cell }));
 }
 
 // ---------------------------------------------------------------------------
@@ -371,39 +364,34 @@ function trashRect() {
 // ---------------------------------------------------------------------------
 function updateInteraction(dtMs: number) {
   const tiles = paletteTiles();
-  const mb = modeButtonRect();
-  const tb = trashRect();
+  const c = cauldronGeo();
+  const mix = mixButtonRect();
+  const clr = clearButtonRect();
+  const shelf = shelfCells();
+
   for (const name of ['Left', 'Right'] as SlotName[]) {
     const st = hands[name];
-    if (!st.present) { st.btnMs = 0; st.trashMs = 0; continue; }
+    if (!st.present) { resetDwell(st); continue; }
 
-    // Botón de modo (in-canvas, top-left) tiene prioridad sobre los tiles.
-    if (st.x >= mb.x && st.x <= mb.x + mb.w && st.y >= mb.y && st.y <= mb.y + mb.h) {
-      st.dwellSymbol = null; st.dwellMs = 0; st.trashMs = 0;
-      st.btnMs += dtMs;
-      if (st.btnMs >= BTN_DWELL_MS && modeSwitchCooldown === 0) switchMode();
-      continue;
+    // 0) Estante de inventario (abajo): sacar un producto a la mano por dwell.
+    //    Solo si la mano está libre (si ya sostiene algo, no interrumpimos).
+    if (!st.held) {
+      const cellHit = shelf.find((cell) => inRect(st.x, st.y, cell));
+      if (cellHit) {
+        st.dwellSymbol = null; st.dwellMs = 0; st.depositMs = 0; st.mixMs = 0; st.clearMs = 0;
+        if (st.shelfId === cellHit.formula) {
+          st.shelfMs += dtMs;
+          if (st.shelfMs >= SHELF_DWELL_MS) { st.shelfMs = 0; giveIngredient(cellHit.formula); }
+        } else { st.shelfId = cellHit.formula; st.shelfMs = 0; }
+        continue;
+      }
     }
-    st.btnMs = 0;
+    st.shelfId = null; st.shelfMs = 0;
 
-    // Papelera (esquina inferior derecha): descarta lo que sostiene, por dwell.
-    if (st.x >= tb.x && st.x <= tb.x + tb.w && st.y >= tb.y && st.y <= tb.y + tb.h) {
-      st.dwellSymbol = null; st.dwellMs = 0;
-      if (st.held) {
-        st.trashMs += dtMs;
-        if (st.trashMs >= TRASH_DWELL_MS) {
-          particles.burst(st.x, st.y, '#94a3b8', 28, 260 * DPR);
-          toasts.push({ text: '🗑', color: '#94a3b8', x: st.x / canvas.width, y: st.y / canvas.height, age: 0 });
-          st.held = null; st.count = 0; st.trashMs = 0;
-          playChime(false);
-        }
-      } else { st.trashMs = 0; }
-      continue;
-    }
-    st.trashMs = 0;
-
+    // 1) Paleta de átomos (arriba): agarrar/stackear por dwell.
     const over = tileUnder(st.x, st.y, tiles);
     if (over) {
+      st.depositMs = 0; st.mixMs = 0; st.clearMs = 0;
       if (st.dwellSymbol === over.symbol) {
         st.dwellMs += dtMs;
         if (st.dwellMs >= DWELL_MS) {
@@ -412,83 +400,140 @@ function updateInteraction(dtMs: number) {
           else { st.held = over.symbol; st.count = 1; }
         }
       } else { st.dwellSymbol = over.symbol; st.dwellMs = 0; }
-    } else { st.dwellSymbol = null; st.dwellMs = 0; }
-  }
+      continue;
+    }
+    st.dwellSymbol = null; st.dwellMs = 0;
 
-  const a = hands.Left, b = hands.Right;
-  if (a.present && b.present && a.held && b.held && cooldown === 0) {
-    if (Math.hypot(a.x - b.x, a.y - b.y) < 0.18 * canvas.height) triggerCombine();
+    // 2) Botón Mezclar (dwell).
+    if (inRect(st.x, st.y, mix)) {
+      st.depositMs = 0; st.clearMs = 0;
+      st.mixMs += dtMs;
+      if (st.mixMs >= MIX_DWELL_MS && cooldown === 0) { st.mixMs = 0; mezclar(); }
+      continue;
+    }
+    st.mixMs = 0;
+
+    // 3) Botón Vaciar (dwell).
+    if (inRect(st.x, st.y, clr)) {
+      st.depositMs = 0;
+      st.clearMs += dtMs;
+      if (st.clearMs >= CLEAR_DWELL_MS) { st.clearMs = 0; clearCauldron(); }
+      continue;
+    }
+    st.clearMs = 0;
+
+    // 4) Cuenco: si la mano sostiene algo y lo mete adentro, lo deposita.
+    if (st.held && Math.hypot(st.x - c.cx, st.y - c.cy) <= c.r * 1.04) {
+      st.depositMs += dtMs;
+      if (st.depositMs >= DEPOSIT_MS) { st.depositMs = 0; deposit(st); }
+      continue;
+    }
+    st.depositMs = 0;
   }
 }
 
-function triggerCombine() {
-  const a = hands.Left, b = hands.Right;
-  const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
-  const molecule = combineStacks({ symbol: a.held!, count: a.count }, { symbol: b.held!, count: b.count });
-  cooldown = COOLDOWN_MS;
-  a.held = b.held = null; a.count = b.count = 0;
+/** Mete lo que sostiene la mano en el cuenco y la deja libre. */
+function deposit(st: HandState) {
+  if (!st.held || st.count <= 0) return;
+  const c = cauldronGeo();
+  contents[st.held] = (contents[st.held] ?? 0) + st.count;
+  const color = isElement(st.held) ? ELEMENTS[st.held].color : findMolecule(st.held)?.color ?? '#a78bfa';
+  particles.burst(c.cx, c.cy, color, 30, 280 * DPR);
+  playChime(true);
+  st.held = null; st.count = 0;
+}
 
-  if (!molecule) {
-    particles.burst(cx, cy, '#64748b', 45, 320 * DPR);
-    toasts.push({ text: 'No reaction', color: '#94a3b8', x: cx / canvas.width, y: cy / canvas.height, age: 0 });
-    playChime(false);
+/** Resuelve el cuenco con lo que tiene adentro. */
+function mezclar() {
+  const c = cauldronGeo();
+  const ids = Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0);
+  if (ids.length === 0) {
+    pushToast('Cuenco vacío', '#94a3b8', c.cx, c.cy);
     return;
   }
+  cooldown = COOLDOWN_MS;
+  const product = brew(contents);
 
-  particles.burst(cx, cy, molecule.color, 180, 660 * DPR);
-  playChime(true);
-  spawnFloating(molecule, cx / canvas.width, cy / canvas.height);
-
-  if (mode === 'challenge') {
-    const i = targets.findIndex((t) => t.molecule.formula === molecule.formula);
-    if (i >= 0) {
-      targets.splice(i, 1);
-      combo += 1;
-      const pts = 100 * combo;
-      score += pts;
-      toasts.push({ text: `+${pts}${combo > 1 ? `  x${combo}` : ''}`, color: molecule.color, x: cx / canvas.width, y: cy / canvas.height, age: 0 });
-    } else {
-      toasts.push({ text: molecule.formula, color: molecule.color, x: cx / canvas.width, y: cy / canvas.height, age: 0 });
-    }
-  } else {
-    discovered.add(molecule.formula);
-    showInfo(molecule);
+  if (!product) {
+    particles.burst(c.cx, c.cy, '#64748b', 50, 320 * DPR);
+    pushToast('No reacciona', '#94a3b8', c.cx, c.cy);
+    playChime(false);
+    return; // conservamos el contenido para que puedas ajustar
   }
+
+  particles.burst(c.cx, c.cy, product.color, 180, 660 * DPR);
+  playChime(true);
+  spawnFloating(product, c.cx / canvas.width, (c.cy - c.r * 0.8) / canvas.height);
+  const isNew = inventory.add(product.formula);
+  pushToast(`${product.nameEs}${isNew ? ' ✦' : ''}`, product.color, c.cx, c.cy - c.r * 0.6);
+  clearContents();
+  showInfo(product, isNew);
+}
+
+/** Vacía el cuenco con feedback (botón Vaciar). */
+function clearCauldron() {
+  const ids = Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0);
+  if (ids.length === 0) return;
+  const c = cauldronGeo();
+  particles.burst(c.cx, c.cy, '#94a3b8', 24, 240 * DPR);
+  pushToast('Vaciado', '#94a3b8', c.cx, c.cy);
+  clearContents();
+  playChime(false);
+}
+
+function clearContents() {
+  for (const k of Object.keys(contents)) delete contents[k];
+}
+
+function pushToast(text: string, color: string, px: number, py: number) {
+  toasts.push({ text, color, x: px / canvas.width, y: py / canvas.height, age: 0 });
 }
 
 // ---------------------------------------------------------------------------
-// Voz → mano libre
+// Traer un ingrediente a la mano (voz o estante)
 // ---------------------------------------------------------------------------
-/** Pone `symbol` en una mano libre presente (o suma si ya lo sostiene). */
-function giveElement(symbol: ElementSymbol) {
+/**
+ * Pone `id` (átomo o producto descubierto) en una mano libre presente, o suma
+ * una unidad si una mano ya lo sostiene. Sirve para la voz y para el estante.
+ */
+function giveIngredient(id: IngredientId) {
+  const color = ingredientColor(id);
+  const label = isElement(id) ? ELEMENTS[id].symbol : id;
   const order: SlotName[] = ['Right', 'Left'];
-  // Si una mano ya sostiene ese elemento, sumamos una unidad.
   for (const n of order) {
     const st = hands[n];
-    if (st.present && st.held === symbol) {
+    if (st.present && st.held === id) {
       st.count = Math.min(MAX_COUNT, st.count + 1);
-      voiceFeedback(st, symbol);
+      ingredientFeedback(st, color, label);
       return;
     }
   }
-  // Si no, va a la primera mano libre presente.
   for (const n of order) {
     const st = hands[n];
     if (st.present && st.held === null) {
-      st.held = symbol;
+      st.held = id;
       st.count = 1;
-      voiceFeedback(st, symbol);
+      ingredientFeedback(st, color, label);
       return;
     }
   }
-  // Ninguna mano libre a la vista: aviso suave.
-  toasts.push({ text: `${ELEMENTS[symbol].symbol} — show a free hand`, color: ELEMENTS[symbol].color, x: 0.5, y: 0.42, age: 0 });
+  pushToast(`${label} — mostrá una mano libre`, color, canvas.width / 2, canvas.height * 0.42);
 }
 
-function voiceFeedback(st: HandState, symbol: ElementSymbol) {
-  particles.burst(st.x, st.y - 40 * DPR, ELEMENTS[symbol].color, 26, 240 * DPR);
-  toasts.push({ text: ELEMENTS[symbol].symbol, color: ELEMENTS[symbol].color, x: st.x / canvas.width, y: (st.y - 96 * DPR) / canvas.height, age: 0 });
+function ingredientFeedback(st: HandState, color: string, label: string) {
+  particles.burst(st.x, st.y - 40 * DPR, color, 26, 240 * DPR);
+  pushToast(label, color, st.x, st.y - 96 * DPR);
   playChime(true);
+}
+
+/** Productos invocables por voz ahora: solo los ya descubiertos (nombre ES/EN). */
+function productLexicon(): ProductLexEntry[] {
+  const out: ProductLexEntry[] = [];
+  for (const formula of inventory.list()) {
+    const m = findMolecule(formula);
+    if (m) out.push({ id: formula, names: [m.nameEs, m.name] });
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,63 +555,36 @@ function updateFloating(dt: number) {
     f.x += f.vx * dt;
     f.y += f.vy * dt;
     f.rot += f.rotVel * dt;
-    // Rebote suave dentro de la zona visible.
     if (f.x < 0.07) { f.x = 0.07; f.vx = Math.abs(f.vx); }
     if (f.x > 0.93) { f.x = 0.93; f.vx = -Math.abs(f.vx); }
-    if (f.y < 0.16) { f.y = 0.16; f.vy = Math.abs(f.vy); }
-    if (f.y > 0.82) { f.y = 0.82; f.vy = -Math.abs(f.vy); }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Challenge: objetivos que caen + dificultad creciente
-// ---------------------------------------------------------------------------
-function spawnTarget() {
-  const molecule = MOLECULES[Math.floor(Math.random() * MOLECULES.length)];
-  targets.push({ molecule, x: 0.12 + Math.random() * 0.76, y: -0.08, vy: fallSpeed() });
-}
-function fallSpeed() {
-  return 0.026 + Math.min(0.04, elapsed * 0.0007); // cae más lento y acelera suave
-}
-function spawnInterval() {
-  return Math.max(2.8, 4.8 - elapsed * 0.02); // aparecen con más calma
-}
-function updateChallenge(dt: number) {
-  elapsed += dt;
-  spawnTimer += dt;
-  if (spawnTimer >= spawnInterval()) { spawnTimer = 0; spawnTarget(); }
-  for (let i = targets.length - 1; i >= 0; i--) {
-    targets[i].y += targets[i].vy * dt;
-    if (targets[i].y > 1.08) {
-      targets.splice(i, 1);
-      combo = 0; // se cortó la racha
-    }
+    if (f.y < 0.14) { f.y = 0.14; f.vy = Math.abs(f.vy); }
+    if (f.y > 0.7) { f.y = 0.7; f.vy = -Math.abs(f.vy); }
   }
 }
 
 function updateToasts(dtMs: number) {
   for (const t of toasts) { t.age += dtMs; t.y -= 0.00006 * dtMs; }
-  for (let i = toasts.length - 1; i >= 0; i--) if (toasts[i].age > 1400) toasts.splice(i, 1);
+  for (let i = toasts.length - 1; i >= 0; i--) if (toasts[i].age > 1500) toasts.splice(i, 1);
 }
 
 // ---------------------------------------------------------------------------
-// Panel de info (modo normal)
+// Panel de info
 // ---------------------------------------------------------------------------
-function showInfo(m: Molecule) {
+function showInfo(m: Molecule, isNew: boolean) {
   const elems = (Object.keys(m.composition) as ElementSymbol[])
     .filter((s) => (m.composition[s] ?? 0) > 0)
     .map((s) => {
       const el = ELEMENTS[s];
-      return `<li><b style="color:${el.color}">${el.symbol}</b> ${el.name} · Z=${el.atomicNumber} · ×${m.composition[s]}</li>`;
+      return `<li><b style="color:${el.color}">${el.symbol}</b> ${el.nameEs} · Z=${el.atomicNumber} · ×${m.composition[s]}</li>`;
     })
     .join('');
   infoEl.innerHTML = `
     <div class="info-head" style="--accent:${m.color}">
       <span class="info-formula">${m.formula}</span>
-      <span class="info-name">${m.name}</span>
+      <span class="info-name">${m.nameEs}${isNew ? ' ✦' : ''}</span>
     </div>
     <p class="info-desc">${m.description}</p>
-    <div class="info-recipe">Recipe: <b>${recipeText(m.composition)}</b></div>
+    <div class="info-recipe">Composición: <b>${recipeText(m.composition)}</b></div>
     <ul class="info-elements">${elems}</ul>`;
   infoEl.classList.remove('hidden');
   clearTimeout(infoTimer);
@@ -598,95 +616,16 @@ function playChime(success: boolean) {
 // ---------------------------------------------------------------------------
 function render(time: number) {
   drawVideoMirrored();
-  if (mode === 'challenge') drawTargets();
-  else drawGuide(time);
+  drawCauldron(time);
   drawFloating();
   drawPalette(time);
-  drawModeButton();
-  drawTrash();
+  drawMixButton();
+  drawClearButton();
+  drawShelf(time);
   drawVoiceHint();
   for (const name of ['Left', 'Right'] as SlotName[]) drawHand(hands[name], time);
   particles.draw(ctx);
   drawToasts();
-  if (mode === 'challenge') drawHud();
-}
-
-/** Papelera in-canvas (esquina inferior derecha) con progreso de dwell. */
-function drawTrash() {
-  const tb = trashRect();
-  const progress = Math.max(hands.Left.trashMs, hands.Right.trashMs) / TRASH_DWELL_MS;
-  const active = progress > 0;
-
-  roundRect(tb.x, tb.y, tb.w, tb.h, 14 * DPR);
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
-  ctx.fill();
-  if (active) {
-    ctx.save();
-    roundRect(tb.x, tb.y, tb.w, tb.h, 14 * DPR);
-    ctx.clip();
-    ctx.fillStyle = '#f8717133';
-    ctx.fillRect(tb.x, tb.y, tb.w, tb.h * Math.min(1, progress));
-    ctx.restore();
-  }
-  roundRect(tb.x, tb.y, tb.w, tb.h, 14 * DPR);
-  ctx.lineWidth = 2 * DPR;
-  ctx.strokeStyle = active ? '#f87171' : 'rgba(148, 163, 184, 0.55)';
-  ctx.stroke();
-
-  ctx.fillStyle = '#e5e7eb';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `${28 * DPR}px system-ui, sans-serif`;
-  ctx.fillText('🗑', tb.x + tb.w / 2, tb.y + tb.h * 0.42);
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = `600 ${12 * DPR}px system-ui, sans-serif`;
-  ctx.fillText('discard', tb.x + tb.w / 2, tb.y + tb.h * 0.8);
-}
-
-/** Indicador de escucha por voz (al lado del botón de modo). */
-function drawVoiceHint() {
-  if (!voiceListening) return;
-  const mb = modeButtonRect();
-  const x = mb.x + mb.w + 14 * DPR;
-  const y = mb.y + mb.h / 2;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.font = `${20 * DPR}px system-ui, sans-serif`;
-  ctx.fillText('🎙', x, y);
-  ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
-  ctx.font = `600 ${14 * DPR}px system-ui, sans-serif`;
-  ctx.fillText('say an element', x + 26 * DPR, y);
-}
-
-function drawModeButton() {
-  const mb = modeButtonRect();
-  const toChallenge = mode === 'normal';
-  const accent = toChallenge ? '#fbbf24' : '#7dd3fc';
-  const label = toChallenge ? '⚡ Challenge' : '🔬 Explore';
-  const progress = Math.max(hands.Left.btnMs, hands.Right.btnMs) / BTN_DWELL_MS;
-
-  roundRect(mb.x, mb.y, mb.w, mb.h, 14 * DPR);
-  ctx.fillStyle = 'rgba(15, 23, 42, 0.6)';
-  ctx.fill();
-  // Relleno de progreso del dwell.
-  if (progress > 0) {
-    ctx.save();
-    roundRect(mb.x, mb.y, mb.w, mb.h, 14 * DPR);
-    ctx.clip();
-    ctx.fillStyle = accent + '33';
-    ctx.fillRect(mb.x, mb.y, mb.w * Math.min(1, progress), mb.h);
-    ctx.restore();
-  }
-  roundRect(mb.x, mb.y, mb.w, mb.h, 14 * DPR);
-  ctx.lineWidth = 2 * DPR;
-  ctx.strokeStyle = accent;
-  ctx.stroke();
-
-  ctx.fillStyle = '#e5e7eb';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `700 ${20 * DPR}px system-ui, sans-serif`;
-  ctx.fillText(label, mb.x + mb.w / 2, mb.y + mb.h / 2);
 }
 
 function drawVideoMirrored() {
@@ -699,6 +638,145 @@ function drawVideoMirrored() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 }
 
+/** Dibuja un ingrediente (átomo o producto) centrado en (x,y). */
+function drawIngredient(x: number, y: number, scale: number, id: IngredientId, time: number) {
+  if (isElement(id)) { drawAtom(ctx, x, y, scale, id, time); return; }
+  const m = findMolecule(id);
+  if (m) drawMolecule(ctx, x, y, scale, m);
+}
+
+/** Color representativo de un ingrediente. */
+function ingredientColor(id: IngredientId): string {
+  return isElement(id) ? ELEMENTS[id].color : findMolecule(id)?.color ?? '#a78bfa';
+}
+
+function drawCauldron(time: number) {
+  const { cx, cy, r } = cauldronGeo();
+  const ids = Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0);
+  const filled = ids.length > 0;
+
+  // Halo exterior pulsante.
+  const pulse = 1 + Math.sin(time * 1.8) * 0.03;
+  const glow = ctx.createRadialGradient(cx, cy, r * 0.4, cx, cy, r * 1.5 * pulse);
+  glow.addColorStop(0, filled ? 'rgba(167,139,250,0.30)' : 'rgba(99,102,241,0.16)');
+  glow.addColorStop(1, 'rgba(15,23,42,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 1.5 * pulse, 0, Math.PI * 2);
+  ctx.fill();
+
+  // "Líquido" del cuenco.
+  const liquid = ctx.createRadialGradient(cx, cy - r * 0.2, r * 0.1, cx, cy, r);
+  liquid.addColorStop(0, 'rgba(49, 46, 90, 0.92)');
+  liquid.addColorStop(1, 'rgba(12, 14, 30, 0.92)');
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = liquid;
+  ctx.fill();
+
+  // Borde del cuenco.
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.lineWidth = 4 * DPR;
+  ctx.strokeStyle = filled ? 'rgba(196,181,253,0.95)' : 'rgba(129,140,248,0.7)';
+  ctx.stroke();
+
+  if (!filled) {
+    ctx.fillStyle = 'rgba(214,222,235,0.92)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.min(r * 0.16, 26 * DPR)}px system-ui, sans-serif`;
+    ctx.fillText('⚗ Cuenco', cx, cy - r * 0.08);
+    ctx.fillStyle = 'rgba(186,200,220,0.95)';
+    ctx.font = `500 ${Math.min(r * 0.1, 15 * DPR)}px system-ui, sans-serif`;
+    ctx.fillText('acercá un átomo', cx, cy + r * 0.16);
+    return;
+  }
+
+  // Ingredientes acumulados, en anillo dentro del cuenco.
+  const ringR = r * 0.52;
+  const step = (Math.PI * 2) / ids.length;
+  ids.forEach((id, i) => {
+    const a = -Math.PI / 2 + i * step + time * 0.25;
+    const ix = cx + Math.cos(a) * ringR;
+    const iy = cy + Math.sin(a) * ringR;
+    const s = Math.min(r * 0.2, 34 * DPR);
+    drawIngredient(ix, iy, s, id, time);
+    // Badge de cantidad.
+    const n = contents[id] ?? 0;
+    if (n > 1) {
+      const bx = ix + s * 0.9, by = iy - s * 0.9;
+      ctx.beginPath();
+      ctx.arc(bx, by, 13 * DPR, 0, Math.PI * 2);
+      ctx.fillStyle = '#0f172a'; ctx.fill();
+      ctx.lineWidth = 2 * DPR; ctx.strokeStyle = ingredientColor(id); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `800 ${15 * DPR}px system-ui, sans-serif`;
+      ctx.fillText(`×${n}`, bx, by);
+    }
+  });
+
+  // Etiqueta de receta en el centro.
+  const label = ids.map((id) => `${(contents[id] ?? 0) > 1 ? `${contents[id]} ` : ''}${ingredientLabel(id)}`).join(' + ');
+  ctx.fillStyle = '#e2e8f0';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `600 ${Math.min(r * 0.1, 14 * DPR)}px system-ui, sans-serif`;
+  wrapText(label, cx, cy, r * 1.7, Math.min(r * 0.13, 18 * DPR));
+}
+
+/** Dibuja texto centrado, partido en líneas para no exceder maxWidth. */
+function wrapText(text: string, cx: number, cy: number, maxWidth: number, lineH: number) {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let line = '';
+  for (const w of words) {
+    const test = line ? `${line} ${w}` : w;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = w; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  const startY = cy - ((lines.length - 1) * lineH) / 2;
+  lines.forEach((l, i) => ctx.fillText(l, cx, startY + i * lineH));
+}
+
+function drawButton(rect: Rect, label: string, accent: string, progress: number, enabled: boolean) {
+  roundRect(rect.x, rect.y, rect.w, rect.h, 14 * DPR);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.62)';
+  ctx.fill();
+  if (progress > 0) {
+    ctx.save();
+    roundRect(rect.x, rect.y, rect.w, rect.h, 14 * DPR);
+    ctx.clip();
+    ctx.fillStyle = accent + '33';
+    ctx.fillRect(rect.x, rect.y, rect.w * Math.min(1, progress), rect.h);
+    ctx.restore();
+  }
+  roundRect(rect.x, rect.y, rect.w, rect.h, 14 * DPR);
+  ctx.lineWidth = 2 * DPR;
+  ctx.strokeStyle = enabled ? accent : 'rgba(148,163,184,0.5)';
+  ctx.stroke();
+  ctx.fillStyle = enabled ? '#e5e7eb' : 'rgba(148,163,184,0.7)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${20 * DPR}px system-ui, sans-serif`;
+  ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
+}
+
+function drawMixButton() {
+  const rect = mixButtonRect();
+  const has = Object.keys(contents).some((k) => (contents[k] ?? 0) > 0);
+  const progress = Math.max(hands.Left.mixMs, hands.Right.mixMs) / MIX_DWELL_MS;
+  drawButton(rect, '✨ Mezclar', '#fbbf24', progress, has && cooldown === 0);
+}
+
+function drawClearButton() {
+  const rect = clearButtonRect();
+  const has = Object.keys(contents).some((k) => (contents[k] ?? 0) > 0);
+  const progress = Math.max(hands.Left.clearMs, hands.Right.clearMs) / CLEAR_DWELL_MS;
+  drawButton(rect, '🗑 Vaciar', '#f87171', progress, has);
+}
+
 function drawFloating() {
   for (const f of floating) {
     const cx = f.x * canvas.width;
@@ -707,7 +785,6 @@ function drawFloating() {
     ctx.save();
     ctx.translate(cx, cy);
     ctx.rotate(f.rot);
-    // halo
     ctx.beginPath();
     ctx.arc(0, 0, scale * 1.5, 0, Math.PI * 2);
     ctx.fillStyle = f.molecule.color + '22';
@@ -721,62 +798,6 @@ function drawFloating() {
   }
 }
 
-function drawTargets() {
-  for (const t of targets) {
-    const cx = t.x * canvas.width;
-    const cy = t.y * canvas.height;
-    const scale = 32 * DPR;
-    drawMolecule(ctx, cx, cy, scale, t.molecule);
-    ctx.textAlign = 'center';
-    ctx.fillStyle = t.molecule.color;
-    ctx.font = `700 ${19 * DPR}px system-ui, sans-serif`;
-    ctx.fillText(t.molecule.formula, cx, cy + scale * 1.6);
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = `500 ${13 * DPR}px system-ui, sans-serif`;
-    ctx.fillText(recipeText(t.molecule.composition), cx, cy + scale * 1.6 + 21 * DPR);
-  }
-}
-
-function drawGuide(time: number) {
-  // Tira de moléculas-objetivo en la parte inferior (referencia, sin presión).
-  const n = MOLECULES.length;
-  const pad = 16 * DPR;
-  // Reservamos el ancho de la papelera (esquina inf. derecha) para no taparla.
-  const usable = trashRect().x - 8 * DPR;
-  const w = (usable - pad * (n + 1)) / n;
-  const h = Math.min(w * 1.15, 150 * DPR);
-  const y = canvas.height - h - pad;
-  MOLECULES.forEach((m, i) => {
-    const x = pad + i * (w + pad);
-    const done = discovered.has(m.formula);
-    roundRect(x, y, w, h, 14 * DPR);
-    ctx.fillStyle = done ? 'rgba(34,197,94,0.14)' : 'rgba(15,23,42,0.5)';
-    ctx.fill();
-    ctx.lineWidth = 2 * DPR;
-    ctx.strokeStyle = done ? '#22c55e' : m.color + '88';
-    ctx.stroke();
-
-    ctx.save();
-    ctx.globalAlpha = done ? 1 : 0.85;
-    drawMolecule(ctx, x + w / 2, y + h * 0.34, Math.min(w, h) * 0.2, m);
-    ctx.restore();
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = m.color;
-    ctx.font = `700 ${Math.min(w * 0.16, 22 * DPR)}px system-ui, sans-serif`;
-    ctx.fillText(m.formula, x + w / 2, y + h * 0.66);
-    ctx.fillStyle = '#cbd5e1';
-    ctx.font = `500 ${Math.min(w * 0.1, 13 * DPR)}px system-ui, sans-serif`;
-    ctx.fillText(recipeText(m.composition), x + w / 2, y + h * 0.84);
-    if (done) {
-      ctx.fillStyle = '#22c55e';
-      ctx.font = `800 ${16 * DPR}px system-ui, sans-serif`;
-      ctx.fillText('✓', x + w - 14 * DPR, y + 16 * DPR);
-    }
-  });
-  void time;
-}
-
 function drawPalette(time: number) {
   const tiles = paletteTiles();
   for (const t of tiles) {
@@ -787,13 +808,14 @@ function drawPalette(time: number) {
     ctx.lineWidth = 2 * DPR;
     ctx.strokeStyle = el.color;
     ctx.stroke();
-    drawAtom(ctx, t.x + t.size / 2, t.y + t.size * 0.42, t.size * 0.32, t.symbol, time);
+    drawAtom(ctx, t.x + t.size / 2, t.y + t.size * 0.42, t.size * 0.3, t.symbol, time);
     ctx.fillStyle = '#cbd5e1';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `600 ${t.size * 0.12}px system-ui, sans-serif`;
-    ctx.fillText(el.name, t.x + t.size / 2, t.y + t.size * 0.88);
+    ctx.font = `600 ${t.size * 0.13}px system-ui, sans-serif`;
+    ctx.fillText(el.nameEs, t.x + t.size / 2, t.y + t.size * 0.88);
   }
+  // Anillo de progreso de dwell sobre el tile en foco.
   for (const name of ['Left', 'Right'] as SlotName[]) {
     const st = hands[name];
     if (!st.present || !st.dwellSymbol || st.dwellMs <= 0) continue;
@@ -808,6 +830,77 @@ function drawPalette(time: number) {
   }
 }
 
+/**
+ * Estante de productos descubiertos (abajo-izquierda). Es interactivo: hacés
+ * dwell con una mano libre sobre una celda para sacar ese producto a la mano y
+ * volver a usarlo (en el cuenco o como ingrediente de otra receta).
+ */
+function drawShelf(time: number) {
+  const total = inventory.list().length;
+  const pad = 16 * DPR;
+  const cells = shelfCells();
+  const labelY = (cells[0]?.y ?? canvas.height - 86 * DPR) - 18 * DPR;
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(226,232,240,0.9)';
+  ctx.font = `700 ${14 * DPR}px system-ui, sans-serif`;
+  ctx.fillText(`Inventario (${total})`, pad, labelY);
+
+  if (cells.length === 0) {
+    ctx.fillStyle = 'rgba(148,163,184,0.8)';
+    ctx.font = `500 ${13 * DPR}px system-ui, sans-serif`;
+    ctx.fillText('todavía no creaste nada — combiná átomos en el cuenco', pad, labelY + 22 * DPR);
+    return;
+  }
+
+  for (const cell of cells) {
+    const m = findMolecule(cell.formula);
+    if (!m) continue;
+    roundRect(cell.x, cell.y, cell.w, cell.h, 12 * DPR);
+    ctx.fillStyle = 'rgba(15,23,42,0.58)';
+    ctx.fill();
+    ctx.lineWidth = 2 * DPR;
+    ctx.strokeStyle = m.color + 'aa';
+    ctx.stroke();
+    drawMolecule(ctx, cell.x + cell.w / 2, cell.y + cell.h * 0.4, cell.w * 0.2, m);
+    ctx.fillStyle = m.color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${12 * DPR}px system-ui, sans-serif`;
+    ctx.fillText(m.formula, cell.x + cell.w / 2, cell.y + cell.h * 0.84);
+  }
+
+  // Anillo de progreso de dwell sobre la celda en foco.
+  for (const name of ['Left', 'Right'] as SlotName[]) {
+    const st = hands[name];
+    if (!st.present || !st.shelfId || st.shelfMs <= 0) continue;
+    const cell = cells.find((c) => c.formula === st.shelfId);
+    if (!cell) continue;
+    const p = Math.min(1, st.shelfMs / SHELF_DWELL_MS);
+    ctx.beginPath();
+    ctx.arc(cell.x + cell.w / 2, cell.y + cell.h / 2, cell.w * 0.62, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+    ctx.lineWidth = 4 * DPR;
+    ctx.strokeStyle = findMolecule(st.shelfId)?.color ?? '#c4b5fd';
+    ctx.stroke();
+  }
+  void time;
+}
+
+/** Indicador de escucha por voz (esquina superior izquierda). */
+function drawVoiceHint() {
+  if (!voiceListening) return;
+  const x = 18 * DPR;
+  const y = 26 * DPR;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `${20 * DPR}px system-ui, sans-serif`;
+  ctx.fillText('🎙', x, y);
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
+  ctx.font = `600 ${14 * DPR}px system-ui, sans-serif`;
+  ctx.fillText('decí un átomo o producto · “mezclar”', x + 26 * DPR, y);
+}
+
 function drawHand(st: HandState, time: number) {
   if (!st.present) return;
   ctx.beginPath();
@@ -818,18 +911,27 @@ function drawHand(st: HandState, time: number) {
     const rad = 42 * DPR;
     const cx = st.x;
     const cy = st.y - rad - 26 * DPR;
-    drawAtom(ctx, cx, cy, rad, st.held, time);
+    drawIngredient(cx, cy, rad, st.held, time);
     if (st.count > 1) {
       const bx = cx + rad * 0.8, by = cy - rad * 0.8;
       ctx.beginPath();
       ctx.arc(bx, by, 16 * DPR, 0, Math.PI * 2);
       ctx.fillStyle = '#0f172a'; ctx.fill();
       ctx.lineWidth = 2 * DPR;
-      ctx.strokeStyle = ELEMENTS[st.held].color; ctx.stroke();
+      ctx.strokeStyle = ingredientColor(st.held); ctx.stroke();
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `800 ${18 * DPR}px system-ui, sans-serif`;
       ctx.fillText(`×${st.count}`, bx, by);
     }
+  }
+  // Anillo de progreso de depósito al estar sobre el cuenco.
+  if (st.depositMs > 0) {
+    const p = Math.min(1, st.depositMs / DEPOSIT_MS);
+    ctx.beginPath();
+    ctx.arc(st.x, st.y, 22 * DPR, -Math.PI / 2, -Math.PI / 2 + p * Math.PI * 2);
+    ctx.lineWidth = 4 * DPR;
+    ctx.strokeStyle = '#c4b5fd';
+    ctx.stroke();
   }
 }
 
@@ -837,29 +939,13 @@ function drawToasts() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (const t of toasts) {
-    const a = 1 - t.age / 1400;
+    const a = 1 - t.age / 1500;
     ctx.globalAlpha = Math.max(0, a);
     ctx.fillStyle = t.color;
-    ctx.font = `800 ${40 * DPR}px system-ui, sans-serif`;
+    ctx.font = `800 ${38 * DPR}px system-ui, sans-serif`;
     ctx.fillText(t.text, t.x * canvas.width, t.y * canvas.height);
   }
   ctx.globalAlpha = 1;
-}
-
-function drawHud() {
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#e5e7eb';
-  ctx.font = `800 ${34 * DPR}px system-ui, sans-serif`;
-  ctx.fillText(`${score}`, canvas.width - 24 * DPR, 22 * DPR);
-  ctx.fillStyle = '#94a3b8';
-  ctx.font = `600 ${15 * DPR}px system-ui, sans-serif`;
-  ctx.fillText('SCORE', canvas.width - 24 * DPR, 64 * DPR);
-  if (combo > 1) {
-    ctx.fillStyle = '#fbbf24';
-    ctx.font = `700 ${20 * DPR}px system-ui, sans-serif`;
-    ctx.fillText(`combo x${combo}`, canvas.width - 24 * DPR, 92 * DPR);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -876,17 +962,17 @@ function roundRect(x: number, y: number, w: number, h: number, r: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Pantalla de juego "viva" detrás del overlay de permisos (modo idle, sin cámara)
+// Pantalla "viva" detrás del overlay de permisos (idle, sin cámara)
 // ---------------------------------------------------------------------------
 function renderIdle(time: number) {
   ctx.fillStyle = '#070912';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  drawGuide(time);
+  drawCauldron(time);
   drawFloating();
   drawPalette(time);
 }
 function idleLoop(now: number) {
-  if (running) return; // arrancó el juego: cedemos el loop
+  if (running) return;
   const dt = Math.min(now - lastTime, 100) / 1000;
   lastTime = now;
   updateFloating(dt);
@@ -896,7 +982,7 @@ function idleLoop(now: number) {
 
 // Moléculas de muestra flotando como ambiente.
 for (let i = 0; i < 3; i++) {
-  spawnFloating(MOLECULES[(i * 3) % MOLECULES.length], 0.25 + Math.random() * 0.5, 0.35 + Math.random() * 0.3);
+  spawnFloating(MOLECULES[(i * 3) % MOLECULES.length], 0.2 + Math.random() * 0.6, 0.2 + Math.random() * 0.18);
 }
 lastTime = performance.now();
 requestAnimationFrame(idleLoop);
