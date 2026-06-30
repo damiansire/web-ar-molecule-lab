@@ -1,4 +1,4 @@
-# ⚗️ Cuenco de Alquimia
+# 🧪 Molecule Lab
 
 **Combiná átomos con tus manos y tu voz.** Un laboratorio de química en el navegador:
 nombrás un átomo y aparece en tu mano, lo tirás a un **cuenco de alquimia** en el centro
