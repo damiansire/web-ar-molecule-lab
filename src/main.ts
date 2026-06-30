@@ -6,6 +6,7 @@ import {
   isElement,
   ingredientLabel,
   localizedName,
+  localizedDescription,
   allNames,
   ELEMENTS,
   ELEMENT_ORDER,
@@ -697,7 +698,7 @@ function showInfo(m: Molecule, isNew: boolean) {
       <span class="info-formula">${m.formula}</span>
       <span class="info-name">${localizedName(m, lang)}${isNew ? ' ✦' : ''}</span>
     </div>
-    <p class="info-desc">${m.description}</p>
+    <p class="info-desc">${localizedDescription(m, lang)}</p>
     <div class="info-recipe">${recipeText(m.composition)}</div>
     <ul class="info-elements">${elems}</ul>`;
   infoEl.classList.remove('hidden');

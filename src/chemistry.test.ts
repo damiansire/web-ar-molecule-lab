@@ -200,9 +200,11 @@ describe('catálogo', () => {
       expect(el.atomicNumber).toBe(totalElectrons);
     }
   });
-  it('toda molécula tiene una descripción no vacía', () => {
+  it('toda molécula tiene descripción no vacía en los 4 idiomas', () => {
     for (const m of MOLECULES) {
-      expect(m.description.trim().length).toBeGreaterThan(10);
+      for (const d of [m.description, m.descriptionEs, m.descriptionIt, m.descriptionPt]) {
+        expect(d.trim().length).toBeGreaterThan(10);
+      }
     }
   });
 
