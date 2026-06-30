@@ -135,7 +135,8 @@ function renderLangButtons() {
   if (langbarEl) langbarEl.replaceChildren(...LANGS.map((l) => makeLangButton(l, false)));
 }
 
-applyLang(lang); // el overlay arranca en inglés (default), pisando el HTML estático
+// La pintada inicial del overlay (applyLang) se hace al final del módulo, una vez
+// declarado todo el estado (`running`, voz, etc.) que applyLang puede leer.
 
 // ---------------------------------------------------------------------------
 // Estado de juego
@@ -1090,6 +1091,11 @@ function idleLoop(now: number) {
   renderIdle(now / 1000);
   requestAnimationFrame(idleLoop);
 }
+
+// Pintada inicial del overlay en el idioma por defecto (inglés). Se hace acá, al
+// final del módulo, para que `running` y demás estado ya estén inicializados:
+// applyLang los lee y, antes, esto tiraba "Cannot access 'running' before init".
+applyLang(lang);
 
 // Moléculas de muestra flotando como ambiente.
 for (let i = 0; i < 3; i++) {
