@@ -10,9 +10,6 @@ export const LANGS: Lang[] = ['es', 'en', 'it', 'pt'];
 /** Etiqueta corta para el selector de idioma. */
 export const LANG_LABEL: Record<Lang, string> = { es: 'ES', en: 'EN', it: 'IT', pt: 'PT' };
 
-/** Bandera (emoji) por idioma. Ojo: en Windows/Chrome no renderiza como bandera. */
-export const LANG_FLAG: Record<Lang, string> = { es: '🇪🇸', en: '🇬🇧', it: '🇮🇹', pt: '🇧🇷' };
-
 /**
  * Banderas como SVG inline (simplificadas pero reconocibles). A diferencia del
  * emoji, se ven igual en todos los sistemas. Markup propio, seguro para innerHTML.
