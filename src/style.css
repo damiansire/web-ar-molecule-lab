@@ -36,8 +36,11 @@ body {
 #overlay {
   position: fixed;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
   /* Translúcido: deja ver la "pantalla de juego" animada por detrás. */
   background: rgba(5, 6, 10, 0.55);
   backdrop-filter: blur(3px);
@@ -62,6 +65,11 @@ body {
 }
 
 /* --- Selector de idioma --------------------------------------------------- */
+/* Caja propia, separada de la de la cámara */
+.lang-card {
+  padding: 1.1rem 1.4rem;
+}
+
 .lang-title {
   font-size: 0.72rem;
   font-weight: 600;
@@ -77,7 +85,7 @@ body {
   grid-template-columns: 1fr 1fr;
   gap: 0.5rem;
   max-width: 21rem;
-  margin: 0 auto 1.6rem;
+  margin: 0 auto;
 }
 
 /* Barra persistente arriba a la derecha (también durante el juego) */
