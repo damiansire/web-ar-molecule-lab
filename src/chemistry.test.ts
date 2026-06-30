@@ -3,6 +3,11 @@ import {
   combineStacks,
   mergeStacks,
   recipeText,
+  brew,
+  ingredientKey,
+  ingredientLabel,
+  RECIPES,
+  ALCHEMY_RECIPES,
   MOLECULES,
   ELEMENTS,
   ELEMENT_ORDER,
@@ -70,6 +75,82 @@ describe('recipeText', () => {
   });
 });
 
+describe('ingredientKey (clave canónica del cuenco)', () => {
+  it('es independiente del orden de inserción', () => {
+    expect(ingredientKey({ 'CO₂': 1, 'H₂O': 1 })).toBe(ingredientKey({ 'H₂O': 1, 'CO₂': 1 }));
+  });
+  it('separa ids multi-carácter sin ambigüedad', () => {
+    // Sin separador, {Na:1, Cl:1} y un hipotético "NaCl:1" colisionarían.
+    expect(ingredientKey({ Na: 1, Cl: 1 })).toBe('Cl:1,Na:1');
+    expect(ingredientKey({ NaCl: 1 })).toBe('NaCl:1');
+  });
+  it('ignora ingredientes con count cero o negativo', () => {
+    expect(ingredientKey({ H: 2, O: 0 })).toBe('H:2');
+  });
+});
+
+describe('brew (cuenco de alquimia)', () => {
+  it('forma moléculas base desde átomos (mismo dominio que combineStacks)', () => {
+    expect(brew({ H: 2, O: 1 })?.formula).toBe('H₂O');
+    expect(brew({ C: 1, O: 2 })?.formula).toBe('CO₂');
+    expect(brew({ Na: 1, Cl: 1 })?.formula).toBe('NaCl');
+  });
+
+  it('es orden-independiente y exige proporción exacta', () => {
+    expect(brew({ O: 1, H: 2 })?.formula).toBe('H₂O');
+    expect(brew({ H: 1, O: 1 })).toBeNull(); // falta un H
+    expect(brew({ H: 3, O: 1 })).toBeNull(); // sobra un H
+  });
+
+  it('combina PRODUCTOS para formar productos de 2º nivel (árbol de alquimia)', () => {
+    expect(brew({ 'H₂O': 1, 'CO₂': 1 })?.formula).toBe('H₂CO₃');
+    expect(brew({ 'NH₃': 1, 'HCl': 1 })?.formula).toBe('NH₄Cl');
+    expect(brew({ 'SO₂': 1, 'H₂O': 1 })?.formula).toBe('H₂SO₃');
+    expect(brew({ 'NH₃': 1, 'H₂O': 1 })?.formula).toBe('NH₄OH');
+  });
+
+  it('forma las moléculas nuevas de 1º nivel desde átomos', () => {
+    expect(brew({ H: 2, O: 2 })?.formula).toBe('H₂O₂');
+    expect(brew({ O: 3 })?.formula).toBe('O₃');
+    expect(brew({ C: 1, O: 1 })?.formula).toBe('CO');
+    expect(brew({ S: 1, O: 2 })?.formula).toBe('SO₂');
+    expect(brew({ H: 1, F: 1 })?.formula).toBe('HF');
+  });
+
+  it('un producto compound NO se craftea desde átomos sueltos (obliga el árbol)', () => {
+    // H₂CO₃ tiene composición {H:2,C:1,O:3} pero su única receta es Agua + CO₂.
+    expect(brew({ H: 2, C: 1, O: 3 })).toBeNull();
+  });
+
+  it('devuelve null para un contenido sin receta', () => {
+    expect(brew({})).toBeNull();
+    expect(brew({ 'H₂O': 2 })).toBeNull();
+    expect(brew({ Na: 1, C: 1 })).toBeNull();
+  });
+});
+
+describe('recetas y productos', () => {
+  it('cada receta de alquimia apunta a una molécula existente', () => {
+    const formulas = new Set(MOLECULES.map((m) => m.formula));
+    for (const r of ALCHEMY_RECIPES) expect(formulas.has(r.output)).toBe(true);
+  });
+
+  it('toda molécula compound tiene una receta de alquimia', () => {
+    const outputs = new Set(ALCHEMY_RECIPES.map((r) => r.output));
+    for (const m of MOLECULES) if (m.compound) expect(outputs.has(m.formula)).toBe(true);
+  });
+
+  it('no hay dos recetas con el mismo conjunto de ingredientes', () => {
+    const keys = RECIPES.map((r) => ingredientKey(r.inputs));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('ingredientLabel devuelve el nombre en español de átomos y productos', () => {
+    expect(ingredientLabel('O')).toBe('Oxígeno');
+    expect(ingredientLabel('H₂O')).toBe('Agua');
+  });
+});
+
 describe('datos de las moléculas', () => {
   it('la geometría coincide con la composición declarada', () => {
     for (const m of MOLECULES) {
@@ -111,5 +192,10 @@ describe('catálogo', () => {
     for (const m of MOLECULES) {
       expect(m.description.trim().length).toBeGreaterThan(10);
     }
+  });
+
+  it('todo elemento y molécula tiene nombre en español', () => {
+    for (const sym of ELEMENT_ORDER) expect(ELEMENTS[sym].nameEs.trim().length).toBeGreaterThan(1);
+    for (const m of MOLECULES) expect(m.nameEs.trim().length).toBeGreaterThan(1);
   });
 });
