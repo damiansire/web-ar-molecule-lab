@@ -14,10 +14,15 @@
     <canvas id="stage"></canvas>
     <video id="cam" playsinline muted></video>
 
+    <!-- Selector de idioma siempre visible (también dentro del juego). -->
+    <div id="langbar" class="langbar" role="group" aria-label="Language / Idioma"></div>
+
     <div id="overlay">
       <div class="card">
+        <div class="lang-title">🌐 Language · Idioma</div>
+        <div id="langs" class="langs" role="group" aria-label="Language / Idioma"></div>
         <div class="logo">⚗️</div>
-        <h1>Cuenco&nbsp;de&nbsp;Alquimia</h1>
+        <h1 id="title">Alchemy&nbsp;Cauldron</h1>
         <p class="lead">Activá la cámara para jugar.</p>
         <button id="start" type="button">Activar cámara</button>
         <p class="privacy">🔒 Corre en tu dispositivo · tu cámara nunca sale de acá</p>
