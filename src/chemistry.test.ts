@@ -6,6 +6,8 @@ import {
   brew,
   ingredientKey,
   ingredientLabel,
+  localizedName,
+  allNames,
   RECIPES,
   ALCHEMY_RECIPES,
   MOLECULES,
@@ -145,9 +147,19 @@ describe('recetas y productos', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('ingredientLabel devuelve el nombre en español de átomos y productos', () => {
-    expect(ingredientLabel('O')).toBe('Oxígeno');
-    expect(ingredientLabel('H₂O')).toBe('Agua');
+  it('ingredientLabel devuelve el nombre localizado de átomos y productos', () => {
+    expect(ingredientLabel('O', 'es')).toBe('Oxígeno');
+    expect(ingredientLabel('O', 'en')).toBe('Oxygen');
+    expect(ingredientLabel('O', 'it')).toBe('Ossigeno');
+    expect(ingredientLabel('H₂O', 'pt')).toBe('Água');
+    expect(ingredientLabel('H₂O', 'es')).toBe('Agua');
+  });
+
+  it('localizedName y allNames cubren los 4 idiomas', () => {
+    expect(localizedName(ELEMENTS.Na, 'it')).toBe('Sodio');
+    expect(localizedName(ELEMENTS.S, 'pt')).toBe('Enxofre');
+    const water = MOLECULES.find((m) => m.formula === 'H₂O')!;
+    expect(allNames(water)).toEqual(['Water', 'Agua', 'Acqua', 'Água']);
   });
 });
 
@@ -194,8 +206,13 @@ describe('catálogo', () => {
     }
   });
 
-  it('todo elemento y molécula tiene nombre en español', () => {
-    for (const sym of ELEMENT_ORDER) expect(ELEMENTS[sym].nameEs.trim().length).toBeGreaterThan(1);
-    for (const m of MOLECULES) expect(m.nameEs.trim().length).toBeGreaterThan(1);
+  it('todo elemento y molécula tiene nombre en los 4 idiomas', () => {
+    for (const sym of ELEMENT_ORDER) {
+      const el = ELEMENTS[sym];
+      for (const n of [el.name, el.nameEs, el.nameIt, el.namePt]) expect(n.trim().length).toBeGreaterThan(1);
+    }
+    for (const m of MOLECULES) {
+      for (const n of [m.name, m.nameEs, m.nameIt, m.namePt]) expect(n.trim().length).toBeGreaterThan(1);
+    }
   });
 });
