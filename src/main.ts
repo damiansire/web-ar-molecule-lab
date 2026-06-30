@@ -5,6 +5,8 @@ import {
   findMolecule,
   isElement,
   ingredientLabel,
+  localizedName,
+  allNames,
   ELEMENTS,
   ELEMENT_ORDER,
   MOLECULES,
@@ -16,8 +18,9 @@ import {
 import { HandTracker, LM, type Hand } from './hands';
 import { ParticleSystem } from './particles';
 import { drawAtom, drawMolecule } from './structure';
-import { VoiceRecognizer, type ProductLexEntry } from './voice';
+import { VoiceRecognizer, resolveLang, type ProductLexEntry, type VoiceCommand } from './voice';
 import { createInventory } from './inventory';
+import { t, LANGS, LANG_LABEL, LANG_FLAG_SVG, LANG_NAME, type Lang } from './i18n';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -31,7 +34,10 @@ const SHELF_MAX = 12;        // celdas visibles del estante (las más recientes)
 const COOLDOWN_MS = 1200;    // entre mezclas
 const MAX_COUNT = 6;
 const MAX_FLOATING = 10;
-const VOICE_LANG = 'es-AR';  // el juego es español-first
+
+// Idioma de la UI y del reconocimiento de voz. Por defecto inglés; el jugador lo
+// cambia con el selector de banderas (visible siempre, también dentro del juego).
+let lang: Lang = 'en';
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -74,10 +80,10 @@ let modelReady: Promise<boolean> | null = null;
 
 function preloadModel(): Promise<boolean> {
   if (!modelReady) {
-    statusEl.textContent = 'Preparando el modelo…';
+    statusEl.textContent = t(lang, 'statusWarmup');
     modelReady = tracker.init().then(
-      () => { statusEl.textContent = '✨ Listo — tocá empezar'; return true; },
-      (err) => { console.error(err); statusEl.textContent = 'El modelo no cargó. Recargá para reintentar.'; return false; },
+      () => { statusEl.textContent = t(lang, 'statusReady'); return true; },
+      (err) => { console.error(err); statusEl.textContent = t(lang, 'statusErr'); return false; },
     );
   }
   return modelReady;
@@ -87,6 +93,50 @@ function preloadModel(): Promise<boolean> {
 startBtn.addEventListener('pointerenter', preloadModel, { once: true });
 startBtn.addEventListener('pointerdown', preloadModel, { once: true });
 startBtn.addEventListener('focus', preloadModel, { once: true });
+
+// ---------------------------------------------------------------------------
+// Selector de idioma (overlay): cambia el HUD y el locale del reconocedor de voz
+// ---------------------------------------------------------------------------
+const langsEl = document.querySelector<HTMLDivElement>('#langs');       // overlay: bandera + nombre
+const langbarEl = document.querySelector<HTMLDivElement>('#langbar');   // persistente in-game: bandera + código
+const titleEl = document.querySelector<HTMLHeadingElement>('#title');
+const leadEl = document.querySelector<HTMLParagraphElement>('.lead');
+const privacyEl = document.querySelector<HTMLParagraphElement>('.privacy');
+
+/** Aplica un idioma: textos del overlay, botones y —si ya se está jugando— la voz. */
+function applyLang(l: Lang) {
+  const changed = l !== lang;
+  lang = l;
+  document.documentElement.lang = l;
+  if (titleEl) titleEl.textContent = t(l, 'title');
+  if (leadEl) leadEl.textContent = t(l, 'lead');
+  startBtn.textContent = t(l, 'start');
+  if (privacyEl) privacyEl.textContent = t(l, 'privacy');
+  // El status solo se pisa si seguimos en la pantalla idle (sin warmup en curso).
+  if (!running && !modelReady) statusEl.textContent = t(l, 'statusIdle');
+  renderLangButtons();
+  // En vivo, reiniciamos el reconocedor para que escuche en el nuevo idioma.
+  if (changed && running && voiceListening) restartVoice();
+}
+
+function makeLangButton(l: Lang, full: boolean): HTMLButtonElement {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'lang' + (l === lang ? ' active' : '');
+  b.setAttribute('aria-pressed', String(l === lang));
+  // Bandera SVG (markup propio, seguro) + nombre nativo o código.
+  b.innerHTML = `<span class="flag">${LANG_FLAG_SVG[l]}</span><span class="lang-name">${full ? LANG_NAME[l] : LANG_LABEL[l]}</span>`;
+  b.addEventListener('click', () => applyLang(l));
+  return b;
+}
+
+function renderLangButtons() {
+  if (langsEl) langsEl.replaceChildren(...LANGS.map((l) => makeLangButton(l, true)));
+  if (langbarEl) langbarEl.replaceChildren(...LANGS.map((l) => makeLangButton(l, false)));
+}
+
+// La pintada inicial del overlay (applyLang) se hace al final del módulo, una vez
+// declarado todo el estado (`running`, voz, etc.) que applyLang puede leer.
 
 // ---------------------------------------------------------------------------
 // Estado de juego
@@ -140,6 +190,22 @@ let infoTimer: ReturnType<typeof setTimeout> | undefined;
 const voice = new VoiceRecognizer();
 let voiceListening = false;
 
+/** Arranca la escucha de voz en el idioma actual. Devuelve si quedó activa. */
+function startVoice(): boolean {
+  return VoiceRecognizer.supported && voice.start({
+    onElement: giveIngredient,
+    onProduct: giveIngredient,
+    onCommand: handleVoiceCommand,
+    getProducts: productLexicon,
+  }, resolveLang(lang));
+}
+
+/** Reinicia la voz (al cambiar de idioma en vivo) para escuchar en el nuevo locale. */
+function restartVoice() {
+  voice.stop();
+  voiceListening = startVoice();
+}
+
 // ---------------------------------------------------------------------------
 // Arranque
 // ---------------------------------------------------------------------------
@@ -147,15 +213,31 @@ startBtn.addEventListener('click', () => start());
 
 let camStream: MediaStream | null = null;
 
+/**
+ * Pide cámara y —si el navegador soporta voz— micrófono en UN SOLO prompt, para
+ * no encadenar dos permisos (cámara y después el del reconocimiento de voz). Si
+ * el micrófono no está disponible/permitido, reintenta solo con la cámara: el
+ * juego sigue funcionando por gestos.
+ */
+async function requestMedia(): Promise<MediaStream> {
+  const video = { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30 } };
+  const wantsMic = VoiceRecognizer.supported;
+  try {
+    return await navigator.mediaDevices.getUserMedia({ video, audio: wantsMic });
+  } catch (err) {
+    if (!wantsMic) throw err;
+    return await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  }
+}
+
 async function start() {
   startBtn.disabled = true;
   try {
-    statusEl.textContent = 'Pidiendo la cámara…';
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 960 }, height: { ideal: 540 }, frameRate: { ideal: 30 } },
-      audio: false,
-    });
+    statusEl.textContent = t(lang, 'statusCam');
+    const stream = await requestMedia();
     camStream = stream;
+    // Solo el video alimenta el tracking; el track de audio (si lo hay) queda
+    // abierto únicamente para que el reconocimiento de voz reuse el permiso.
     video.srcObject = stream;
     await video.play();
 
@@ -169,17 +251,12 @@ async function start() {
     lastTime = performance.now();
     requestAnimationFrame(loop);
 
-    // Escucha de voz (pide micrófono; si falla, se juega con gestos).
-    voiceListening = VoiceRecognizer.supported && voice.start({
-      onElement: giveIngredient,
-      onProduct: giveIngredient,
-      onCommand: () => mezclar(),
-      getProducts: productLexicon,
-    }, VOICE_LANG);
+    // Escucha de voz (el permiso de micrófono ya se pidió junto al de cámara).
+    voiceListening = startVoice();
   } catch (err) {
     console.error(err);
     stopCamera();
-    statusEl.textContent = 'No se pudo acceder a la cámara. Revisá permisos y recargá.';
+    statusEl.textContent = t(lang, 'statusErr');
     statusEl.classList.add('error');
     startBtn.disabled = false;
   }
@@ -460,7 +537,7 @@ function mezclar() {
   if (cooldown !== 0) return;
   const c = cauldronGeo();
   if (!cauldronHasContents()) {
-    pushToast('Cuenco vacío', '#94a3b8', c.cx, c.cy);
+    pushToast(t(lang, 'emptyCauldron'), '#94a3b8', c.cx, c.cy);
     return;
   }
   cooldown = COOLDOWN_MS;
@@ -468,7 +545,7 @@ function mezclar() {
 
   if (!product) {
     particles.burst(c.cx, c.cy, '#64748b', 50, 320 * DPR);
-    pushToast('No reacciona', '#94a3b8', c.cx, c.cy);
+    pushToast(t(lang, 'noReaction'), '#94a3b8', c.cx, c.cy);
     playChime(false);
     return; // conservamos el contenido para que puedas ajustar
   }
@@ -477,7 +554,7 @@ function mezclar() {
   playChime(true);
   spawnFloating(product, c.cx / canvas.width, (c.cy - c.r * 0.8) / canvas.height);
   const isNew = inventory.add(product.formula);
-  pushToast(`${product.nameEs}${isNew ? ' ✦' : ''}`, product.color, c.cx, c.cy - c.r * 0.6);
+  pushToast(`${localizedName(product, lang)}${isNew ? ' ✦' : ''}`, product.color, c.cx, c.cy - c.r * 0.6);
   clearContents();
   showInfo(product, isNew);
 }
@@ -487,9 +564,35 @@ function clearCauldron() {
   if (!cauldronHasContents()) return;
   const c = cauldronGeo();
   particles.burst(c.cx, c.cy, '#94a3b8', 24, 240 * DPR);
-  pushToast('Vaciado', '#94a3b8', c.cx, c.cy);
+  pushToast(t(lang, 'emptied'), '#94a3b8', c.cx, c.cy);
   clearContents();
   playChime(false);
+}
+
+/** Despacha una orden de voz a la acción correspondiente. */
+function handleVoiceCommand(c: VoiceCommand) {
+  if (c === 'mix') mezclar();
+  else if (c === 'clear') clearCauldron();
+  else if (c === 'deposit') depositByVoice('any');
+  else if (c === 'deposit-left') depositByVoice('Left');
+  else if (c === 'deposit-right') depositByVoice('Right');
+}
+
+/**
+ * Deposita por voz lo que sostiene una mano (o cualquiera) en el cuenco, sin
+ * tener que acercarla físicamente. `'any'` vacía las dos manos que tengan algo.
+ */
+function depositByVoice(which: SlotName | 'any') {
+  const slots: SlotName[] = which === 'any' ? ['Right', 'Left'] : [which];
+  let did = false;
+  for (const n of slots) {
+    const st = hands[n];
+    if (st.held && st.count > 0) { deposit(st); did = true; }
+  }
+  if (!did) {
+    const where = which === 'Left' ? t(lang, 'handLeft') : which === 'Right' ? t(lang, 'handRight') : t(lang, 'hands');
+    pushToast(`${t(lang, 'nothingInHand')} ${where}`, '#94a3b8', canvas.width / 2, canvas.height * 0.42);
+  }
 }
 
 function clearContents() {
@@ -528,7 +631,7 @@ function giveIngredient(id: IngredientId) {
       return;
     }
   }
-  pushToast(`${label} — mostrá una mano libre`, color, canvas.width / 2, canvas.height * 0.42);
+  pushToast(`${label} — ${t(lang, 'freeHand')}`, color, canvas.width / 2, canvas.height * 0.42);
 }
 
 function ingredientFeedback(st: HandState, color: string, label: string) {
@@ -537,12 +640,12 @@ function ingredientFeedback(st: HandState, color: string, label: string) {
   playChime(true);
 }
 
-/** Productos invocables por voz ahora: solo los ya descubiertos (nombre ES/EN). */
+/** Productos invocables por voz ahora: solo los ya descubiertos (nombres en 4 idiomas). */
 function productLexicon(): ProductLexEntry[] {
   const out: ProductLexEntry[] = [];
   for (const formula of inventory.list()) {
     const m = findMolecule(formula);
-    if (m) out.push({ id: formula, names: [m.nameEs, m.name] });
+    if (m) out.push({ id: formula, names: allNames(m) });
   }
   return out;
 }
@@ -586,16 +689,16 @@ function showInfo(m: Molecule, isNew: boolean) {
     .filter((s) => (m.composition[s] ?? 0) > 0)
     .map((s) => {
       const el = ELEMENTS[s];
-      return `<li><b style="color:${el.color}">${el.symbol}</b> ${el.nameEs} · Z=${el.atomicNumber} · ×${m.composition[s]}</li>`;
+      return `<li><b style="color:${el.color}">${el.symbol}</b> ${localizedName(el, lang)} · Z=${el.atomicNumber} · ×${m.composition[s]}</li>`;
     })
     .join('');
   infoEl.innerHTML = `
     <div class="info-head" style="--accent:${m.color}">
       <span class="info-formula">${m.formula}</span>
-      <span class="info-name">${m.nameEs}${isNew ? ' ✦' : ''}</span>
+      <span class="info-name">${localizedName(m, lang)}${isNew ? ' ✦' : ''}</span>
     </div>
     <p class="info-desc">${m.description}</p>
-    <div class="info-recipe">Composición: <b>${recipeText(m.composition)}</b></div>
+    <div class="info-recipe">${recipeText(m.composition)}</div>
     <ul class="info-elements">${elems}</ul>`;
   infoEl.classList.remove('hidden');
   clearTimeout(infoTimer);
@@ -697,10 +800,10 @@ function drawCauldron(time: number) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `700 ${Math.min(r * 0.16, 26 * DPR)}px system-ui, sans-serif`;
-    ctx.fillText('⚗ Cuenco', cx, cy - r * 0.08);
+    ctx.fillText(t(lang, 'cauldron'), cx, cy - r * 0.08);
     ctx.fillStyle = 'rgba(186,200,220,0.95)';
     ctx.font = `500 ${Math.min(r * 0.1, 15 * DPR)}px system-ui, sans-serif`;
-    ctx.fillText('acercá un átomo', cx, cy + r * 0.16);
+    ctx.fillText(t(lang, 'cauldronHint'), cx, cy + r * 0.16);
     return;
   }
 
@@ -728,7 +831,7 @@ function drawCauldron(time: number) {
   });
 
   // Etiqueta de receta en el centro.
-  const label = ids.map((id) => `${(contents[id] ?? 0) > 1 ? `${contents[id]} ` : ''}${ingredientLabel(id)}`).join(' + ');
+  const label = ids.map((id) => `${(contents[id] ?? 0) > 1 ? `${contents[id]} ` : ''}${ingredientLabel(id, lang)}`).join(' + ');
   ctx.fillStyle = '#e2e8f0';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -777,13 +880,13 @@ function drawButton(rect: Rect, label: string, accent: string, progress: number,
 function drawMixButton() {
   const rect = mixButtonRect();
   const progress = Math.max(hands.Left.mixMs, hands.Right.mixMs) / MIX_DWELL_MS;
-  drawButton(rect, '✨ Mezclar', '#fbbf24', progress, cauldronHasContents() && cooldown === 0);
+  drawButton(rect, t(lang, 'mix'), '#fbbf24', progress, cauldronHasContents() && cooldown === 0);
 }
 
 function drawClearButton() {
   const rect = clearButtonRect();
   const progress = Math.max(hands.Left.clearMs, hands.Right.clearMs) / CLEAR_DWELL_MS;
-  drawButton(rect, '🗑 Vaciar', '#f87171', progress, cauldronHasContents());
+  drawButton(rect, t(lang, 'empty'), '#f87171', progress, cauldronHasContents());
 }
 
 function drawFloating() {
@@ -822,7 +925,7 @@ function drawPalette(time: number) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `600 ${t.size * 0.13}px system-ui, sans-serif`;
-    ctx.fillText(el.nameEs, t.x + t.size / 2, t.y + t.size * 0.88);
+    ctx.fillText(localizedName(el, lang), t.x + t.size / 2, t.y + t.size * 0.88);
   }
   // Anillo de progreso de dwell sobre el tile en foco.
   for (const name of ['Left', 'Right'] as SlotName[]) {
@@ -854,12 +957,12 @@ function drawShelf(time: number) {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(226,232,240,0.9)';
   ctx.font = `700 ${14 * DPR}px system-ui, sans-serif`;
-  ctx.fillText(`Inventario (${total})`, pad, labelY);
+  ctx.fillText(`${t(lang, 'inventory')} (${total})`, pad, labelY);
 
   if (cells.length === 0) {
     ctx.fillStyle = 'rgba(148,163,184,0.8)';
     ctx.font = `500 ${13 * DPR}px system-ui, sans-serif`;
-    ctx.fillText('todavía no creaste nada — combiná átomos en el cuenco', pad, labelY + 22 * DPR);
+    ctx.fillText(t(lang, 'inventoryEmpty'), pad, labelY + 22 * DPR);
     return;
   }
 
@@ -907,7 +1010,7 @@ function drawVoiceHint() {
   ctx.fillText('🎙', x, y);
   ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
   ctx.font = `600 ${14 * DPR}px system-ui, sans-serif`;
-  ctx.fillText('decí un átomo o producto · “mezclar”', x + 26 * DPR, y);
+  ctx.fillText(t(lang, 'voiceHint'), x + 26 * DPR, y);
 }
 
 function drawHand(st: HandState, time: number) {
@@ -988,6 +1091,11 @@ function idleLoop(now: number) {
   renderIdle(now / 1000);
   requestAnimationFrame(idleLoop);
 }
+
+// Pintada inicial del overlay en el idioma por defecto (inglés). Se hace acá, al
+// final del módulo, para que `running` y demás estado ya estén inicializados:
+// applyLang los lee y, antes, esto tiraba "Cannot access 'running' before init".
+applyLang(lang);
 
 // Moléculas de muestra flotando como ambiente.
 for (let i = 0; i < 3; i++) {
