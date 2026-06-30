@@ -6,6 +6,7 @@ import {
   isElement,
   ingredientLabel,
   localizedName,
+  localizedDescription,
   allNames,
   ELEMENTS,
   ELEMENT_ORDER,
@@ -55,19 +56,36 @@ const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 // pantallas HiDPI sin reventar el fill-rate en pantallas 3x.
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-// Cache del layout de la paleta. Declarado ACÁ —antes de resize()— a propósito:
-// resize() corre en la evaluación del módulo y lo invalida, así que si la
-// declaración `let` quedara más abajo caería en la temporal dead zone y tiraría
-// "Cannot access 'tilesCache' before initialization", abortando todo main.ts.
+// Caches de layout/geometría que solo dependen del tamaño del canvas. Declarados
+// ACÁ —antes de resize()— a propósito: resize() corre en la evaluación del módulo
+// y los invalida, así que si las declaraciones `let` quedaran más abajo caerían en
+// la temporal dead zone ("Cannot access ... before initialization"), abortando
+// todo main.ts. Se nulean en resize() y se recalculan perezosamente (mismo patrón
+// que el resto de caches por-evento de este archivo).
 interface Tile { symbol: ElementSymbol; x: number; y: number; size: number; }
+interface Rect { x: number; y: number; w: number; h: number; }
+interface CauldronGeo { cx: number; cy: number; r: number; }
+interface ShelfCell extends Rect { formula: string; }
+
 let tilesCache: Tile[] | null = null;
+let cauldronGeoCache: CauldronGeo | null = null;
+let mixRectCache: Rect | null = null;
+let clearRectCache: Rect | null = null;
+let liquidGradientCache: CanvasGradient | null = null;
+let shelfCellsCache: ShelfCell[] | null = null;
 
 function resize() {
   canvas.width = window.innerWidth * DPR;
   canvas.height = window.innerHeight * DPR;
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
-  tilesCache = null; // el layout de la paleta depende del ancho
+  // Todo lo que depende del tamaño del canvas se invalida de una.
+  tilesCache = null;
+  cauldronGeoCache = null;
+  mixRectCache = null;
+  clearRectCache = null;
+  liquidGradientCache = null;
+  shelfCellsCache = null;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -164,10 +182,27 @@ const makeHand = (): HandState => ({
   shelfId: null, shelfMs: 0,
 });
 type SlotName = 'Left' | 'Right';
+// Constante reusada en el hot path: evita crear un array nuevo por frame en cada
+// loop sobre las dos manos (syncHands, updateInteraction, render, draws).
+const SLOTS: readonly SlotName[] = ['Left', 'Right'];
 const hands: Record<SlotName, HandState> = { Left: makeHand(), Right: makeHand() };
 
 // El cuenco de alquimia: multiset de ingredientes acumulados (átomos y/o productos).
 const contents: Cauldron = {};
+// Cache de los ids con cantidad > 0. `contents` solo cambia en deposit/clear, así
+// que en vez de recorrer Object.keys(...).filter(...) ~3×/frame lo derivamos una
+// vez por cambio. Se invalida con invalidateCauldron().
+let cauldronIdsCache: string[] | null = null;
+function invalidateCauldron() { cauldronIdsCache = null; }
+function cauldronIds(): string[] {
+  return (cauldronIdsCache ??= Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0));
+}
+
+// Snapshot del inventario (inventory.list() copia el array interno). Solo cambia
+// en un `mezclar` exitoso (inventory.add); lo cacheamos para no copiar por frame.
+let invListCache: string[] | null = null;
+function invList(): string[] { return (invListCache ??= inventory.list()); }
+function invalidateInventory() { invListCache = null; shelfCellsCache = null; }
 
 // Moléculas levitando tras una mezcla exitosa. Posiciones en fracciones del canvas.
 interface Floating { molecule: Molecule; x: number; y: number; vx: number; vy: number; rot: number; rotVel: number; }
@@ -286,6 +321,7 @@ function resetGame() {
   floating.length = 0;
   toasts.length = 0;
   for (const k of Object.keys(contents)) delete contents[k];
+  invalidateCauldron();
   cooldown = 0;
 }
 
@@ -370,7 +406,7 @@ function syncHands(detected: Hand[]) {
     st.x = (1 - tip.x) * canvas.width;
     st.y = tip.y * canvas.height;
   }
-  for (const name of ['Left', 'Right'] as SlotName[]) {
+  for (const name of SLOTS) {
     if (!hands[name].present) resetDwell(hands[name]);
   }
 }
@@ -398,42 +434,47 @@ function tileUnder(px: number, py: number, tiles: Tile[]): Tile | null {
   return tiles.find((t) => px >= t.x && px <= t.x + t.size && py >= t.y && py <= t.y + t.size) ?? null;
 }
 
-/** Cuenco central (círculo). */
-function cauldronGeo() {
+/** Cuenco central (círculo). Cacheado por tamaño de canvas (se nulea en resize). */
+function cauldronGeo(): CauldronGeo {
+  if (cauldronGeoCache) return cauldronGeoCache;
   const cx = canvas.width / 2;
   const cy = canvas.height * 0.5;
   const r = Math.min(canvas.width * 0.17, canvas.height * 0.26, 230 * DPR);
-  return { cx, cy, r };
+  return (cauldronGeoCache = { cx, cy, r });
 }
 
-interface Rect { x: number; y: number; w: number; h: number; }
 function mixButtonRect(): Rect {
+  if (mixRectCache) return mixRectCache;
   const c = cauldronGeo();
   const w = Math.min(canvas.width * 0.22, 220 * DPR);
   const h = 64 * DPR;
   const gap = 14 * DPR;
-  return { x: c.cx - w - gap / 2, y: c.cy + c.r + 30 * DPR, w, h };
+  return (mixRectCache = { x: c.cx - w - gap / 2, y: c.cy + c.r + 30 * DPR, w, h });
 }
 function clearButtonRect(): Rect {
+  if (clearRectCache) return clearRectCache;
   const c = cauldronGeo();
   const w = Math.min(canvas.width * 0.15, 150 * DPR);
   const h = 64 * DPR;
   const gap = 14 * DPR;
-  return { x: c.cx + gap / 2, y: c.cy + c.r + 30 * DPR, w, h };
+  return (clearRectCache = { x: c.cx + gap / 2, y: c.cy + c.r + 30 * DPR, w, h });
 }
 function inRect(px: number, py: number, r: Rect): boolean {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
-/** Celdas del estante de inventario (los últimos SHELF_MAX productos descubiertos). */
-interface ShelfCell extends Rect { formula: string; }
+/**
+ * Celdas del estante de inventario (los últimos SHELF_MAX productos descubiertos).
+ * Cacheado: solo cambia al descubrir un producto (invalidateInventory) o en resize.
+ */
 function shelfCells(): ShelfCell[] {
-  const list = inventory.list().slice(-SHELF_MAX);
+  if (shelfCellsCache) return shelfCellsCache;
+  const list = invList().slice(-SHELF_MAX);
   const cell = 64 * DPR;
   const gap = 10 * DPR;
   const pad = 16 * DPR;
   const y = canvas.height - cell - 22 * DPR;
-  return list.map((formula, i) => ({ formula, x: pad + i * (cell + gap), y, w: cell, h: cell }));
+  return (shelfCellsCache = list.map((formula, i) => ({ formula, x: pad + i * (cell + gap), y, w: cell, h: cell })));
 }
 
 // ---------------------------------------------------------------------------
@@ -446,7 +487,7 @@ function updateInteraction(dtMs: number) {
   const clr = clearButtonRect();
   const shelf = shelfCells();
 
-  for (const name of ['Left', 'Right'] as SlotName[]) {
+  for (const name of SLOTS) {
     const st = hands[name];
     if (!st.present) { resetDwell(st); continue; }
 
@@ -517,6 +558,7 @@ function deposit(st: HandState) {
   if (!st.held || st.count <= 0) return;
   const c = cauldronGeo();
   contents[st.held] = (contents[st.held] ?? 0) + st.count;
+  invalidateCauldron(); // `contents` cambió → recalcular ids cacheados
   const color = isElement(st.held) ? ELEMENTS[st.held].color : findMolecule(st.held)?.color ?? '#a78bfa';
   particles.burst(c.cx, c.cy, color, 30, 280 * DPR);
   playChime(true);
@@ -525,7 +567,7 @@ function deposit(st: HandState) {
 
 /** ¿El cuenco tiene al menos un ingrediente? */
 function cauldronHasContents(): boolean {
-  return Object.keys(contents).some((k) => (contents[k] ?? 0) > 0);
+  return cauldronIds().length > 0;
 }
 
 /**
@@ -554,6 +596,7 @@ function mezclar() {
   playChime(true);
   spawnFloating(product, c.cx / canvas.width, (c.cy - c.r * 0.8) / canvas.height);
   const isNew = inventory.add(product.formula);
+  if (isNew) invalidateInventory(); // el estante/lexicon cacheados cambiaron
   pushToast(`${localizedName(product, lang)}${isNew ? ' ✦' : ''}`, product.color, c.cx, c.cy - c.r * 0.6);
   clearContents();
   showInfo(product, isNew);
@@ -597,6 +640,7 @@ function depositByVoice(which: SlotName | 'any') {
 
 function clearContents() {
   for (const k of Object.keys(contents)) delete contents[k];
+  invalidateCauldron();
 }
 
 function pushToast(text: string, color: string, px: number, py: number) {
@@ -643,7 +687,7 @@ function ingredientFeedback(st: HandState, color: string, label: string) {
 /** Productos invocables por voz ahora: solo los ya descubiertos (nombres en 4 idiomas). */
 function productLexicon(): ProductLexEntry[] {
   const out: ProductLexEntry[] = [];
-  for (const formula of inventory.list()) {
+  for (const formula of invList()) {
     const m = findMolecule(formula);
     if (m) out.push({ id: formula, names: allNames(m) });
   }
@@ -697,7 +741,7 @@ function showInfo(m: Molecule, isNew: boolean) {
       <span class="info-formula">${m.formula}</span>
       <span class="info-name">${localizedName(m, lang)}${isNew ? ' ✦' : ''}</span>
     </div>
-    <p class="info-desc">${m.description}</p>
+    <p class="info-desc">${localizedDescription(m, lang)}</p>
     <div class="info-recipe">${recipeText(m.composition)}</div>
     <ul class="info-elements">${elems}</ul>`;
   infoEl.classList.remove('hidden');
@@ -737,7 +781,7 @@ function render(time: number) {
   drawClearButton();
   drawShelf(time);
   drawVoiceHint();
-  for (const name of ['Left', 'Right'] as SlotName[]) drawHand(hands[name], time);
+  for (const name of SLOTS) drawHand(hands[name], time);
   particles.draw(ctx);
   drawToasts();
 }
@@ -766,7 +810,7 @@ function ingredientColor(id: IngredientId): string {
 
 function drawCauldron(time: number) {
   const { cx, cy, r } = cauldronGeo();
-  const ids = Object.keys(contents).filter((k) => (contents[k] ?? 0) > 0);
+  const ids = cauldronIds();
   const filled = ids.length > 0;
 
   // Halo exterior pulsante.
@@ -779,13 +823,17 @@ function drawCauldron(time: number) {
   ctx.arc(cx, cy, r * 1.5 * pulse, 0, Math.PI * 2);
   ctx.fill();
 
-  // "Líquido" del cuenco.
-  const liquid = ctx.createRadialGradient(cx, cy - r * 0.2, r * 0.1, cx, cy, r);
-  liquid.addColorStop(0, 'rgba(49, 46, 90, 0.92)');
-  liquid.addColorStop(1, 'rgba(12, 14, 30, 0.92)');
+  // "Líquido" del cuenco. El gradiente solo depende de la geometría (cx,cy,r), así
+  // que lo construimos una vez y lo reusamos hasta el próximo resize.
+  if (!liquidGradientCache) {
+    const g = ctx.createRadialGradient(cx, cy - r * 0.2, r * 0.1, cx, cy, r);
+    g.addColorStop(0, 'rgba(49, 46, 90, 0.92)');
+    g.addColorStop(1, 'rgba(12, 14, 30, 0.92)');
+    liquidGradientCache = g;
+  }
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
-  ctx.fillStyle = liquid;
+  ctx.fillStyle = liquidGradientCache;
   ctx.fill();
 
   // Borde del cuenco.
@@ -928,7 +976,7 @@ function drawPalette(time: number) {
     ctx.fillText(localizedName(el, lang), t.x + t.size / 2, t.y + t.size * 0.88);
   }
   // Anillo de progreso de dwell sobre el tile en foco.
-  for (const name of ['Left', 'Right'] as SlotName[]) {
+  for (const name of SLOTS) {
     const st = hands[name];
     if (!st.present || !st.dwellSymbol || st.dwellMs <= 0) continue;
     const t = tiles.find((x) => x.symbol === st.dwellSymbol);
@@ -948,7 +996,7 @@ function drawPalette(time: number) {
  * volver a usarlo (en el cuenco o como ingrediente de otra receta).
  */
 function drawShelf(time: number) {
-  const total = inventory.list().length;
+  const total = invList().length;
   const pad = 16 * DPR;
   const cells = shelfCells();
   const labelY = (cells[0]?.y ?? canvas.height - 86 * DPR) - 18 * DPR;
@@ -984,7 +1032,7 @@ function drawShelf(time: number) {
   }
 
   // Anillo de progreso de dwell sobre la celda en foco.
-  for (const name of ['Left', 'Right'] as SlotName[]) {
+  for (const name of SLOTS) {
     const st = hands[name];
     if (!st.present || !st.shelfId || st.shelfMs <= 0) continue;
     const cell = cells.find((c) => c.formula === st.shelfId);
