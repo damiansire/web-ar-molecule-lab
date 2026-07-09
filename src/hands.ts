@@ -13,8 +13,12 @@ import {
   type NormalizedLandmark,
 } from '@mediapipe/tasks-vision';
 
-const WASM_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm';
+// Vendorizado desde npm a public/mediapipe/ por scripts/vendor-mediapipe.mjs
+// (predev/prebuild) — servido desde 'self', no jsdelivr. BASE_URL resuelve
+// correcto tanto en dev ('/') como en GitHub Pages ('/web-ar-molecule-lab/').
+const WASM_URL = `${import.meta.env.BASE_URL}mediapipe/wasm`;
+// El modelo (.task) es un binario de datos ajeno al paquete npm — sigue en el
+// CDN de Google (ver vite.config.ts para el porqué de no vendorizarlo).
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
 
@@ -89,7 +93,13 @@ export class HandTracker {
       // Worker clásico servido desde /public (ver hands-worker.js): corre la
       // inferencia fuera del hilo principal. Clásico —no module— porque
       // MediaPipe usa importScripts para su loader de WASM.
-      const worker = new Worker('/hands-worker.js');
+      //
+      // BASE_URL, no un path absoluto de raíz: GitHub Pages sirve el proyecto
+      // bajo /web-ar-molecule-lab/ (vite.config.ts base), así que
+      // '/hands-worker.js' resolvía a la RAÍZ del dominio y daba 404 en
+      // producción — degradando en silencio al fallback síncrono (bloqueante)
+      // en cada frame, sin que ningún error visible lo delatara.
+      const worker = new Worker(`${import.meta.env.BASE_URL}hands-worker.js`);
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
           () => { cleanup(); reject(new Error('hand worker init timed out (CDN/WASM colgado)')); },

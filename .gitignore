@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Vendorizado desde node_modules por scripts/vendor-mediapipe.mjs (predev/prebuild):
+# artefacto de build reproducible, no source — igual que dist/.
+public/mediapipe/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

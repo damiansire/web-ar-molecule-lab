@@ -8,7 +8,9 @@
   },
   "sideEffects": false,
   "scripts": {
+    "predev": "node scripts/vendor-mediapipe.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/vendor-mediapipe.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
@@ -22,7 +24,7 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^0.10.35",
+    "@mediapipe/tasks-vision": "0.10.35",
     "three": "^0.185.1"
   },
   "description": "Cuenco de alquimia en el navegador: combiná átomos y moléculas con la voz y el seguimiento de manos para descubrir un árbol de compuestos químicos."

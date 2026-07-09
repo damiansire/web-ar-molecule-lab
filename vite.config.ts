@@ -3,28 +3,27 @@ import { defineConfig, type Plugin } from 'vite';
 /**
  * Content-Security-Policy del build de producción.
  *
- * La app pide cámara (getUserMedia) y micrófono (SpeechRecognition) y el worker
- * de tracking baja, por `import()` dinámico, el bundle + WASM de MediaPipe desde
- * jsdelivr y el modelo desde storage.googleapis.com. Sin CSP, un compromiso de
- * esos CDN ejecutaría código arbitrario en una página con acceso a la cámara —
- * justo lo que el overlay promete que no pasa. La CSP acota los orígenes a
- * 'self' + los CDN estrictamente necesarios (defensa en profundidad).
+ * La app pide cámara (getUserMedia) y micrófono (SpeechRecognition). El bundle
+ * ESM + runtime WASM de MediaPipe se vendorizan desde npm a public/mediapipe/
+ * (ver scripts/vendor-mediapipe.mjs) y se sirven desde 'self' — ya NO hay CDN
+ * de código en la CSP. Solo el MODELO (.task, datos, no código ejecutable)
+ * sigue viniendo de storage.googleapis.com: es un binario de varios MB ajeno
+ * al paquete npm; vendorizarlo exige una decisión de Git LFS para el repo
+ * entero, fuera de este alcance (ver _audits/DECISIONES.md). Su origen queda
+ * fijo en connect-src como única superficie externa restante.
  *
  * Notas:
  * - 'wasm-unsafe-eval' es necesario para compilar el WASM de MediaPipe.
- * - blob: en worker/connect/script cubre el loader de WASM de MediaPipe.
- * - SRI no se aplica acá: el `import()` dinámico del worker no admite integrity
- *   por hash; vendorizar @mediapipe (ya es dep npm) y servirlo desde 'self'
- *   sería el cierre completo del vector — queda como mejora pendiente.
+ * - blob: en worker/connect cubre el ImageBitmap transferible y el loader
+ *   interno de WASM de MediaPipe.
  */
-const CDN = 'https://cdn.jsdelivr.net';
 const MODELS = 'https://storage.googleapis.com';
 
 const CSP = [
   `default-src 'self'`,
-  `script-src 'self' 'wasm-unsafe-eval' blob: ${CDN}`,
+  `script-src 'self' 'wasm-unsafe-eval' blob:`,
   `worker-src 'self' blob:`,
-  `connect-src 'self' blob: ${CDN} ${MODELS}`,
+  `connect-src 'self' blob: ${MODELS}`,
   `img-src 'self' data: blob:`,
   `media-src 'self' blob: mediastream:`,
   `style-src 'self' 'unsafe-inline'`,

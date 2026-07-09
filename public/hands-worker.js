@@ -11,9 +11,21 @@
  *   main → worker: { type:'init' } | { type:'frame', bitmap, timestamp }
  *   worker → main: { type:'ready' } | { type:'error', message } | { type:'result', hands }
  */
-const VERSION = '0.10.35';
-const BUNDLE_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/vision_bundle.mjs`;
-const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/wasm`;
+// Vendorizado desde npm a public/mediapipe/ (scripts/vendor-mediapipe.mjs) —
+// servido desde 'self'. Rutas RELATIVAS (sin "/" inicial) a propósito: este
+// script se sirve desde BASE_URL + 'hands-worker.js' (dev o GitHub Pages), y
+// una ruta relativa resuelve sola contra la ubicación real del worker sin
+// tener que conocer el base path (a diferencia del bug de path absoluto que
+// tenía `new Worker('/hands-worker.js')` en hands.ts — ver ahí el porqué).
+// BUNDLE_URL lleva "./" a propósito: import() dinámico exige que el
+// specifier sea una URL real (empiece con "/", "./" o "../"), a diferencia de
+// WASM_URL (un path que FilesetResolver resuelve internamente vía fetch/URL,
+// donde "pelado" sí funciona) — un path relativo sin prefijo tira
+// "Failed to resolve module specifier" (bare specifier, reservado a import maps).
+const BUNDLE_URL = './mediapipe/vision_bundle.mjs';
+const WASM_URL = 'mediapipe/wasm';
+// El modelo (.task) es un binario de datos ajeno al paquete npm — sigue en el
+// CDN de Google (ver vite.config.ts para el porqué de no vendorizarlo).
 const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
 
