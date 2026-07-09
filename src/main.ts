@@ -19,6 +19,7 @@ import {
 import { HandTracker, LM, type Hand } from './hands';
 import { ParticleSystem } from './particles';
 import { drawAtom, drawMolecule } from './structure';
+import { Scene3D } from './render3d';
 import { VoiceRecognizer, resolveLang, type ProductLexEntry, type VoiceCommand } from './voice';
 import { createInventory } from './inventory';
 import { t, LANGS, LANG_LABEL, LANG_FLAG_SVG, LANG_NAME, type Lang } from './i18n';
@@ -45,6 +46,11 @@ let lang: Lang = 'en';
 // ---------------------------------------------------------------------------
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const ctx = canvas.getContext('2d')!;
+const scene3dCanvas = document.querySelector<HTMLCanvasElement>('#scene3d')!;
+const scene3d = new Scene3D(scene3dCanvas);
+// Si WebGL no está disponible, caemos al sprite 2D de siempre (structure.ts)
+// en vez de dejar los ingredientes invisibles — ver Scene3D.available.
+const use3D = scene3d.available;
 const video = document.querySelector<HTMLVideoElement>('#cam')!;
 const overlay = document.querySelector<HTMLDivElement>('#overlay')!;
 const statusEl = document.querySelector<HTMLParagraphElement>('#status')!;
@@ -79,6 +85,9 @@ function resize() {
   canvas.height = window.innerHeight * DPR;
   canvas.style.width = `${window.innerWidth}px`;
   canvas.style.height = `${window.innerHeight}px`;
+  // scene3d comparte el mismo sistema de coordenadas (device px) que #stage,
+  // así los cx/cy/scale que ya calcula el layout 2D sirven sin conversión.
+  scene3d.resize(canvas.width, canvas.height);
   // Todo lo que depende del tamaño del canvas se invalida de una.
   tilesCache = null;
   cauldronGeoCache = null;
@@ -773,6 +782,7 @@ function playChime(success: boolean) {
 // Render
 // ---------------------------------------------------------------------------
 function render(time: number) {
+  if (use3D) scene3d.beginFrame();
   drawVideoMirrored();
   drawCauldron(time);
   drawFloating();
@@ -784,6 +794,7 @@ function render(time: number) {
   for (const name of SLOTS) drawHand(hands[name], time);
   particles.draw(ctx);
   drawToasts();
+  if (use3D) scene3d.endFrame();
 }
 
 function drawVideoMirrored() {
@@ -798,9 +809,13 @@ function drawVideoMirrored() {
 
 /** Dibuja un ingrediente (átomo o producto) centrado en (x,y). */
 function drawIngredient(x: number, y: number, scale: number, id: IngredientId, time: number) {
-  if (isElement(id)) { drawAtom(ctx, x, y, scale, id, time); return; }
+  if (isElement(id)) {
+    if (use3D) scene3d.atom(x, y, scale, id, time); else drawAtom(ctx, x, y, scale, id, time);
+    return;
+  }
   const m = findMolecule(id);
-  if (m) drawMolecule(ctx, x, y, scale, m);
+  if (!m) return;
+  if (use3D) scene3d.molecule(x, y, scale, m, time * 0.35); else drawMolecule(ctx, x, y, scale, m);
 }
 
 /** Color representativo de un ingrediente. */
@@ -942,15 +957,18 @@ function drawFloating() {
     const cx = f.x * canvas.width;
     const cy = f.y * canvas.height;
     const scale = 40 * DPR;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.rotate(f.rot);
     ctx.beginPath();
-    ctx.arc(0, 0, scale * 1.5, 0, Math.PI * 2);
+    ctx.arc(cx, cy, scale * 1.5, 0, Math.PI * 2);
     ctx.fillStyle = f.molecule.color + '22';
     ctx.fill();
-    drawMolecule(ctx, 0, 0, scale, f.molecule);
-    ctx.restore();
+    if (use3D) scene3d.molecule(cx, cy, scale, f.molecule, f.rot);
+    else {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(f.rot);
+      drawMolecule(ctx, 0, 0, scale, f.molecule);
+      ctx.restore();
+    }
     ctx.fillStyle = f.molecule.color;
     ctx.textAlign = 'center';
     ctx.font = `700 ${16 * DPR}px system-ui, sans-serif`;
@@ -968,7 +986,10 @@ function drawPalette(time: number) {
     ctx.lineWidth = 2 * DPR;
     ctx.strokeStyle = el.color;
     ctx.stroke();
-    drawAtom(ctx, t.x + t.size / 2, t.y + t.size * 0.42, t.size * 0.3, t.symbol, time);
+    const acx = t.x + t.size / 2;
+    const acy = t.y + t.size * 0.42;
+    const ar = t.size * 0.3;
+    if (use3D) scene3d.atom(acx, acy, ar, t.symbol, time); else drawAtom(ctx, acx, acy, ar, t.symbol, time);
     ctx.fillStyle = '#cbd5e1';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1023,7 +1044,10 @@ function drawShelf(time: number) {
     ctx.lineWidth = 2 * DPR;
     ctx.strokeStyle = m.color + 'aa';
     ctx.stroke();
-    drawMolecule(ctx, cell.x + cell.w / 2, cell.y + cell.h * 0.4, cell.w * 0.2, m);
+    const mcx = cell.x + cell.w / 2;
+    const mcy = cell.y + cell.h * 0.4;
+    const mscale = cell.w * 0.2;
+    if (use3D) scene3d.molecule(mcx, mcy, mscale, m, time * 0.35); else drawMolecule(ctx, mcx, mcy, mscale, m);
     ctx.fillStyle = m.color;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -1044,7 +1068,6 @@ function drawShelf(time: number) {
     ctx.strokeStyle = findMolecule(st.shelfId)?.color ?? '#c4b5fd';
     ctx.stroke();
   }
-  void time;
 }
 
 /** Indicador de escucha por voz (esquina superior izquierda). */
@@ -1125,11 +1148,13 @@ function roundRect(x: number, y: number, w: number, h: number, r: number) {
 // Pantalla "viva" detrás del overlay de permisos (idle, sin cámara)
 // ---------------------------------------------------------------------------
 function renderIdle(time: number) {
+  if (use3D) scene3d.beginFrame();
   ctx.fillStyle = '#070912';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawCauldron(time);
   drawFloating();
   drawPalette(time);
+  if (use3D) scene3d.endFrame();
 }
 function idleLoop(now: number) {
   if (running) return;

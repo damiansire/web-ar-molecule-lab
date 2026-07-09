@@ -12,6 +12,9 @@
   </head>
   <body>
     <canvas id="stage"></canvas>
+    <!-- Capa WebGL transparente: solo dibuja los átomos/moléculas en 3D real,
+         encima del video+HUD 2D que sigue pintando #stage. -->
+    <canvas id="scene3d"></canvas>
     <video id="cam" playsinline muted></video>
 
     <!-- Selector de idioma siempre visible (también dentro del juego). -->

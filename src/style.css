@@ -24,6 +24,18 @@ body {
   display: block;
 }
 
+/* Encima de #stage (que sigue pintando video+HUD 2D) y debajo del overlay/HUD
+   persistente: solo los ingredientes 3D, transparente donde no hay nada. */
+#scene3d {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  display: block;
+  z-index: 1;
+  pointer-events: none;
+}
+
 /* El video es la fuente del tracking; lo dibujamos en el canvas, no se muestra. */
 #cam {
   position: fixed;

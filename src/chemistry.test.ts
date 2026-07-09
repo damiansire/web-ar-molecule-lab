@@ -182,6 +182,52 @@ describe('datos de las moléculas', () => {
   });
 });
 
+describe('geometría 3D (z opcional, molécula no-planar)', () => {
+  const findAtom = (m: (typeof MOLECULES)[number], symbol: ElementSymbol) =>
+    m.atoms.filter((a) => a.symbol === symbol);
+  const dist3 = (a: { x: number; y: number; z?: number }, b: { x: number; y: number; z?: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
+  const angleDeg = (center: { x: number; y: number; z?: number }, p: { x: number; y: number; z?: number }, q: { x: number; y: number; z?: number }) => {
+    const v1 = [p.x - center.x, p.y - center.y, (p.z ?? 0) - (center.z ?? 0)];
+    const v2 = [q.x - center.x, q.y - center.y, (q.z ?? 0) - (center.z ?? 0)];
+    const dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
+    const mag = (v: number[]) => Math.hypot(v[0], v[1], v[2]);
+    return (Math.acos(dot / (mag(v1) * mag(v2))) * 180) / Math.PI;
+  };
+
+  it('CH₄ es un tetraedro regular: 4 enlaces C-H iguales y ángulo 109.47° entre cualquier par', () => {
+    const ch4 = MOLECULES.find((m) => m.formula === 'CH₄')!;
+    const c = findAtom(ch4, 'C')[0];
+    const hs = findAtom(ch4, 'H');
+    expect(hs).toHaveLength(4);
+    const lengths = hs.map((h) => dist3(c, h));
+    for (const l of lengths) expect(l).toBeCloseTo(lengths[0], 5);
+    for (let i = 0; i < hs.length; i++) {
+      for (let j = i + 1; j < hs.length; j++) {
+        expect(angleDeg(c, hs[i], hs[j])).toBeCloseTo(109.47, 1);
+      }
+    }
+  });
+
+  it.each(['NH₃', 'PH₃'] as const)('%s es piramidal trigonal: el átomo central sobresale en Z y los 3 H quedan simétricos en la base', (formula) => {
+    const m = MOLECULES.find((mm) => mm.formula === formula)!;
+    const center = m.atoms[0]; // N o P, primer átomo
+    const hs = m.atoms.slice(1);
+    expect(hs).toHaveLength(3);
+    // El vértice (N/P) está más cerca de la cámara que la base (H's).
+    for (const h of hs) expect(center.z ?? 0).toBeGreaterThan(h.z ?? 0);
+    // Los 3 enlaces centro-H son aprox. equidistantes (la geometría 2D base es
+    // dibujada a mano, no exacta como la tetraédrica de CH₄; toleramos ~10%).
+    const lengths = hs.map((h) => dist3(center, h));
+    for (const l of lengths) expect(Math.abs(l - lengths[0]) / lengths[0]).toBeLessThan(0.1);
+  });
+
+  it('las moléculas lineales/planas declaradas (CO₂, diatómicas) siguen en z=0 por defecto', () => {
+    const co2 = MOLECULES.find((m) => m.formula === 'CO₂')!;
+    for (const a of co2.atoms) expect(a.z ?? 0).toBe(0);
+  });
+});
+
 describe('catálogo', () => {
   it('ELEMENT_ORDER cubre exactamente las claves de ELEMENTS', () => {
     expect([...ELEMENT_ORDER].sort()).toEqual(Object.keys(ELEMENTS).sort());

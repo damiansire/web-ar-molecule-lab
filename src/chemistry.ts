@@ -29,11 +29,17 @@ export interface ChemElement {
   shells: number[];
 }
 
-/** Un átomo dentro de la estructura de una molécula (coords locales, y hacia abajo). */
+/**
+ * Un átomo dentro de la estructura de una molécula (coords locales, y hacia
+ * abajo). `z` es opcional y por defecto 0 (molécula plana): solo las formas
+ * genuinamente no-planares (tetraédrica, piramidal-trigonal) lo declaran, para
+ * que el render 3D las muestre con su geometría real en vez de aplanadas.
+ */
 export interface Atom {
   symbol: ElementSymbol;
   x: number;
   y: number;
+  z?: number;
 }
 export interface Bond {
   a: number; // índice en atoms
@@ -137,11 +143,13 @@ export const MOLECULES: Molecule[] = [
     descriptionIt: 'Usata per produrre fertilizzanti che nutrono gran parte del mondo, e nei prodotti per la pulizia.',
     descriptionPt: 'Usada para fabricar fertilizantes que alimentam boa parte do mundo, e em produtos de limpeza.',
     composition: { N: 1, H: 3 },
+    // Piramidal trigonal real: N en el vértice (z positivo, hacia la cámara),
+    // los 3 H formando la base triangular (z negativo, hacia atrás).
     atoms: [
-      { symbol: 'N', x: 0, y: 0 },
-      { symbol: 'H', x: 0, y: 0.9 },
-      { symbol: 'H', x: -0.8, y: -0.45 },
-      { symbol: 'H', x: 0.8, y: -0.45 },
+      { symbol: 'N', x: 0, y: 0, z: 0.35 },
+      { symbol: 'H', x: 0, y: 0.9, z: -0.12 },
+      { symbol: 'H', x: -0.8, y: -0.45, z: -0.12 },
+      { symbol: 'H', x: 0.8, y: -0.45, z: -0.12 },
     ],
     bonds: [{ a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 }, { a: 0, b: 3, order: 1 }],
   },
@@ -152,12 +160,15 @@ export const MOLECULES: Molecule[] = [
     descriptionIt: 'Il componente principale del gas naturale: un combustibile comune e un potente gas serra.',
     descriptionPt: 'O principal componente do gás natural: um combustível comum e um potente gás de efeito estufa.',
     composition: { C: 1, H: 4 },
+    // Tetraédrica real: los 4 H en los vértices de un tetraedro regular
+    // centrado en C (signos alternados de una esquina de cubo → ángulo
+    // C-H/C-H exacto de 109.47°, ver test "geometría tetraédrica de CH₄").
     atoms: [
-      { symbol: 'C', x: 0, y: 0 },
-      { symbol: 'H', x: -0.72, y: -0.72 },
-      { symbol: 'H', x: 0.72, y: -0.72 },
-      { symbol: 'H', x: -0.72, y: 0.72 },
-      { symbol: 'H', x: 0.72, y: 0.72 },
+      { symbol: 'C', x: 0, y: 0, z: 0 },
+      { symbol: 'H', x: 0.69, y: 0.69, z: 0.69 },
+      { symbol: 'H', x: 0.69, y: -0.69, z: -0.69 },
+      { symbol: 'H', x: -0.69, y: 0.69, z: -0.69 },
+      { symbol: 'H', x: -0.69, y: -0.69, z: 0.69 },
     ],
     bonds: [
       { a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 },
@@ -332,11 +343,12 @@ export const MOLECULES: Molecule[] = [
     descriptionIt: 'Un gas tossico e infiammabile con odore di aglio, usato nell\'industria dei semiconduttori.',
     descriptionPt: 'Um gás tóxico e inflamável com cheiro de alho, usado na indústria de semicondutores.',
     composition: { P: 1, H: 3 },
+    // Piramidal trigonal, mismo patrón que NH₃ (ver comentario ahí).
     atoms: [
-      { symbol: 'P', x: 0, y: 0 },
-      { symbol: 'H', x: 0, y: 0.9 },
-      { symbol: 'H', x: -0.8, y: -0.45 },
-      { symbol: 'H', x: 0.8, y: -0.45 },
+      { symbol: 'P', x: 0, y: 0, z: 0.35 },
+      { symbol: 'H', x: 0, y: 0.9, z: -0.12 },
+      { symbol: 'H', x: -0.8, y: -0.45, z: -0.12 },
+      { symbol: 'H', x: 0.8, y: -0.45, z: -0.12 },
     ],
     bonds: [{ a: 0, b: 1, order: 1 }, { a: 0, b: 2, order: 1 }, { a: 0, b: 3, order: 1 }],
   },
