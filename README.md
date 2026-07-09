@@ -1,5 +1,9 @@
 # 🧪 Molecule Lab
 
+[![Deploy to GitHub Pages](https://github.com/damiansire/web-ar-molecule-lab/actions/workflows/deploy.yml/badge.svg)](https://github.com/damiansire/web-ar-molecule-lab/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Play online](https://img.shields.io/badge/play-online-brightgreen.svg)](https://damiansire.github.io/web-ar-molecule-lab/)
+
 **Combine atoms with your hands and your voice.** A chemistry lab in your browser:
 name an atom and it appears in your hand, drop it into an **alchemy cauldron** at the
 center of the scene, and on mixing a real molecule forms. Everything you create is kept
@@ -13,20 +17,23 @@ installs.
 
 ## How to play
 
-1. Click **Activar cámara** and allow access.
-2. **Say the name of an atom** (“hidrógeno”, “oxígeno”…) and it appears in your hand. No
+1. Click **Activate camera** and allow access.
+2. **Say the name of an atom** (“hydrogen”, “oxygen”…) and it appears in your hand. No
    microphone? Grab it from the **palette** at the top by holding your fingertip over it.
 3. **Bring your hand to the cauldron** to drop in what you are holding. Repeat to stack
    up (e.g. 2 hydrogen + 1 oxygen).
-4. Say **“mezclar”** (or hold your fingertip on the **✨ Mezclar** button) and the
+4. Say **“mix”** (or hold your fingertip on the **✨ Mix** button) and the
    cauldron resolves the recipe: the molecule is born and enters your **inventory**. No
-   reaction? Adjust and try again, or **🗑 Vaciar** to start over.
-5. Anything you already made can be **re-summoned** by voice (“agua”) or by taking it from
+   reaction? Adjust and try again, or **🗑 Empty** to start over.
+5. Anything you already made can be **re-summoned** by voice (“water”) or by taking it from
    the inventory **shelf** with your hand — and you can drop it back into the cauldron as
    an ingredient.
 
-> The voice commands are in Spanish (the recognizer runs in `es-AR`): say the Spanish name
-> of an atom or product, or “mezclar” to brew.
+> **Multilingual.** The interface and voice recognition are available in **Spanish, English,
+> Italian and Portuguese**; pick one with the language selector next to the camera box (the
+> UI auto-detects your browser language on first load). Speak the atom/molecule name — or the
+> word for “mix” — in the selected language. Labels above are shown in English; they change
+> with the chosen language.
 
 ### The alchemy tree
 
@@ -61,7 +68,10 @@ contacted until you click *Activar cámara*.
 - **Vite + TypeScript**, rendered on a 2D `<canvas>` over the mirrored webcam.
 - **Hand tracking** via [MediaPipe Tasks Vision](https://developers.google.com/mediapipe),
   running in a Web Worker so inference never blocks the render loop.
-- **Voice** via the Web Speech API (optional; the game works fully with gestures alone).
+- **Voice** via the Web Speech API (optional; the game works fully with gestures alone). The
+  recognizer locale follows the selected UI language (`es-ES` / `en-US` / `it-IT` / `pt-BR`).
+- **i18n** (`src/i18n.ts`): UI chrome and element/molecule names in Spanish, English, Italian
+  and Portuguese, resolved as a pure, unit-tested module (no DOM).
 - **Pure, tested domain** (`src/chemistry.ts`): elements, molecules, recipes and the
   cauldron resolver (`brew`) live without the DOM and are covered by unit tests.
 - A strict **Content-Security-Policy** injected at build time scopes network access to
@@ -72,7 +82,7 @@ contacted until you click *Activar cámara*.
 ```bash
 npm install
 npm run dev       # dev server at /web-ar-molecule-lab/
-npm test          # unit tests (chemistry, inventory, voice, hands)
+npm test          # unit tests (chemistry, inventory, voice, hands, i18n)
 npm run build     # production build → dist/
 ```
 

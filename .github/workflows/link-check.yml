@@ -1,0 +1,35 @@
+name: Link Check
+
+# Verifica que los links y badges del README no estén rotos.
+# Corre en cada push/PR a master y también semanalmente para cazar rot externo.
+on:
+  push:
+    branches: [master]
+    paths: ['README.md', '.github/workflows/link-check.yml']
+  pull_request:
+    branches: [master]
+    paths: ['README.md', '.github/workflows/link-check.yml']
+  schedule:
+    - cron: '0 6 * * 1' # lunes 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Link Checker
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # Solo el README: es la cara pública del repo. Excluye loopback
+          # (localhost/127.0.0.1) para no marcar el dev server como roto.
+          args: >-
+            --no-progress
+            --exclude-loopback
+            README.md
+          fail: true
+          jobSummary: true
