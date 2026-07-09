@@ -9,7 +9,6 @@ import {
   localizedDescription,
   allNames,
   ELEMENTS,
-  ELEMENT_ORDER,
   MOLECULES,
   type ElementSymbol,
   type Molecule,
@@ -23,6 +22,7 @@ import { Scene3D } from './render3d';
 import { VoiceRecognizer, resolveLang, type ProductLexEntry, type VoiceCommand } from './voice';
 import { createInventory } from './inventory';
 import { t, LANGS, LANG_LABEL, LANG_FLAG_SVG, LANG_NAME, type Lang } from './i18n';
+import { Layout, tileUnder, inRect, type Rect } from './layout';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -32,7 +32,6 @@ const DEPOSIT_MS = 320;      // soltar lo que sostenés dentro del cuenco
 const MIX_DWELL_MS = 900;    // botón "Mezclar" por dwell
 const CLEAR_DWELL_MS = 800;  // botón "Vaciar" por dwell
 const SHELF_DWELL_MS = 750;  // sacar un producto del estante por dwell
-const SHELF_MAX = 12;        // celdas visibles del estante (las más recientes)
 const COOLDOWN_MS = 1200;    // entre mezclas
 const MAX_COUNT = 6;
 const MAX_FLOATING = 10;
@@ -62,23 +61,11 @@ const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
 // pantallas HiDPI sin reventar el fill-rate en pantallas 3x.
 const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-// Caches de layout/geometría que solo dependen del tamaño del canvas. Declarados
-// ACÁ —antes de resize()— a propósito: resize() corre en la evaluación del módulo
-// y los invalida, así que si las declaraciones `let` quedaran más abajo caerían en
-// la temporal dead zone ("Cannot access ... before initialization"), abortando
-// todo main.ts. Se nulean en resize() y se recalculan perezosamente (mismo patrón
-// que el resto de caches por-evento de este archivo).
-interface Tile { symbol: ElementSymbol; x: number; y: number; size: number; }
-interface Rect { x: number; y: number; w: number; h: number; }
-interface CauldronGeo { cx: number; cy: number; r: number; }
-interface ShelfCell extends Rect { formula: string; }
-
-let tilesCache: Tile[] | null = null;
-let cauldronGeoCache: CauldronGeo | null = null;
-let mixRectCache: Rect | null = null;
-let clearRectCache: Rect | null = null;
+// Geometría de la UI (paleta, cuenco, botones, estante): extraída a layout.ts
+// (ver Layout ahí para el porqué del cacheo por-resize). `liquidGradientCache`
+// se queda acá: depende de `ctx` (2D), es un detalle de render, no de geometría.
+const layout = new Layout(DPR);
 let liquidGradientCache: CanvasGradient | null = null;
-let shelfCellsCache: ShelfCell[] | null = null;
 
 function resize() {
   canvas.width = window.innerWidth * DPR;
@@ -88,13 +75,8 @@ function resize() {
   // scene3d comparte el mismo sistema de coordenadas (device px) que #stage,
   // así los cx/cy/scale que ya calcula el layout 2D sirven sin conversión.
   scene3d.resize(canvas.width, canvas.height);
-  // Todo lo que depende del tamaño del canvas se invalida de una.
-  tilesCache = null;
-  cauldronGeoCache = null;
-  mixRectCache = null;
-  clearRectCache = null;
+  layout.resize(canvas.width, canvas.height);
   liquidGradientCache = null;
-  shelfCellsCache = null;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -211,7 +193,7 @@ function cauldronIds(): string[] {
 // en un `mezclar` exitoso (inventory.add); lo cacheamos para no copiar por frame.
 let invListCache: string[] | null = null;
 function invList(): string[] { return (invListCache ??= inventory.list()); }
-function invalidateInventory() { invListCache = null; shelfCellsCache = null; }
+function invalidateInventory() { invListCache = null; layout.invalidateShelf(); }
 
 // Moléculas levitando tras una mezcla exitosa. Posiciones en fracciones del canvas.
 interface Floating { molecule: Molecule; x: number; y: number; vx: number; vy: number; rot: number; rotVel: number; }
@@ -441,76 +423,16 @@ function resetDwell(st: HandState) {
   st.shelfId = null; st.shelfMs = 0;
 }
 
-// ---------------------------------------------------------------------------
-// Geometría de UI
-// ---------------------------------------------------------------------------
-function paletteTiles(): Tile[] {
-  if (tilesCache) return tilesCache;
-  const n = ELEMENT_ORDER.length;
-  const size = Math.min(canvas.width / (n + 2), 116 * DPR);
-  const gap = size * 0.24;
-  const totalW = n * size + (n - 1) * gap;
-  const startX = (canvas.width - totalW) / 2;
-  const y = size * 0.34;
-  tilesCache = ELEMENT_ORDER.map((symbol, i) => ({ symbol, x: startX + i * (size + gap), y, size }));
-  return tilesCache;
-}
-function tileUnder(px: number, py: number, tiles: Tile[]): Tile | null {
-  return tiles.find((t) => px >= t.x && px <= t.x + t.size && py >= t.y && py <= t.y + t.size) ?? null;
-}
-
-/** Cuenco central (círculo). Cacheado por tamaño de canvas (se nulea en resize). */
-function cauldronGeo(): CauldronGeo {
-  if (cauldronGeoCache) return cauldronGeoCache;
-  const cx = canvas.width / 2;
-  const cy = canvas.height * 0.5;
-  const r = Math.min(canvas.width * 0.17, canvas.height * 0.26, 230 * DPR);
-  return (cauldronGeoCache = { cx, cy, r });
-}
-
-function mixButtonRect(): Rect {
-  if (mixRectCache) return mixRectCache;
-  const c = cauldronGeo();
-  const w = Math.min(canvas.width * 0.22, 220 * DPR);
-  const h = 64 * DPR;
-  const gap = 14 * DPR;
-  return (mixRectCache = { x: c.cx - w - gap / 2, y: c.cy + c.r + 30 * DPR, w, h });
-}
-function clearButtonRect(): Rect {
-  if (clearRectCache) return clearRectCache;
-  const c = cauldronGeo();
-  const w = Math.min(canvas.width * 0.15, 150 * DPR);
-  const h = 64 * DPR;
-  const gap = 14 * DPR;
-  return (clearRectCache = { x: c.cx + gap / 2, y: c.cy + c.r + 30 * DPR, w, h });
-}
-function inRect(px: number, py: number, r: Rect): boolean {
-  return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
-}
-
-/**
- * Celdas del estante de inventario (los últimos SHELF_MAX productos descubiertos).
- * Cacheado: solo cambia al descubrir un producto (invalidateInventory) o en resize.
- */
-function shelfCells(): ShelfCell[] {
-  if (shelfCellsCache) return shelfCellsCache;
-  const list = invList().slice(-SHELF_MAX);
-  const cell = 64 * DPR;
-  const gap = 10 * DPR;
-  const pad = 16 * DPR;
-  const y = canvas.height - cell - 22 * DPR;
-  return (shelfCellsCache = list.map((formula, i) => ({ formula, x: pad + i * (cell + gap), y, w: cell, h: cell })));
-}
 
 // ---------------------------------------------------------------------------
 // Interacción
 // ---------------------------------------------------------------------------
 function updateInteraction(dtMs: number) {
-  const tiles = paletteTiles();
-  const c = cauldronGeo();
-  const mix = mixButtonRect();
-  const clr = clearButtonRect();
-  const shelf = shelfCells();
+  const tiles = layout.tiles();
+  const c = layout.cauldron();
+  const mix = layout.mixButton();
+  const clr = layout.clearButton();
+  const shelf = layout.shelf(invList());
 
   for (const name of SLOTS) {
     const st = hands[name];
@@ -581,7 +503,7 @@ function updateInteraction(dtMs: number) {
 /** Mete lo que sostiene la mano en el cuenco y la deja libre. */
 function deposit(st: HandState) {
   if (!st.held || st.count <= 0) return;
-  const c = cauldronGeo();
+  const c = layout.cauldron();
   contents[st.held] = (contents[st.held] ?? 0) + st.count;
   invalidateCauldron(); // `contents` cambió → recalcular ids cacheados
   const color = isElement(st.held) ? ELEMENTS[st.held].color : findMolecule(st.held)?.color ?? '#a78bfa';
@@ -602,7 +524,7 @@ function cauldronHasContents(): boolean {
  */
 function mezclar() {
   if (cooldown !== 0) return;
-  const c = cauldronGeo();
+  const c = layout.cauldron();
   if (!cauldronHasContents()) {
     pushToast(t(lang, 'emptyCauldron'), '#94a3b8', c.cx, c.cy);
     return;
@@ -630,7 +552,7 @@ function mezclar() {
 /** Vacía el cuenco con feedback (botón Vaciar). */
 function clearCauldron() {
   if (!cauldronHasContents()) return;
-  const c = cauldronGeo();
+  const c = layout.cauldron();
   particles.burst(c.cx, c.cy, '#94a3b8', 24, 240 * DPR);
   pushToast(t(lang, 'emptied'), '#94a3b8', c.cx, c.cy);
   clearContents();
@@ -840,7 +762,7 @@ function ingredientColor(id: IngredientId): string {
 }
 
 function drawCauldron(time: number) {
-  const { cx, cy, r } = cauldronGeo();
+  const { cx, cy, r } = layout.cauldron();
   const ids = cauldronIds();
   const filled = ids.length > 0;
 
@@ -957,13 +879,13 @@ function drawButton(rect: Rect, label: string, accent: string, progress: number,
 }
 
 function drawMixButton() {
-  const rect = mixButtonRect();
+  const rect = layout.mixButton();
   const progress = Math.max(hands.Left.mixMs, hands.Right.mixMs) / MIX_DWELL_MS;
   drawButton(rect, t(lang, 'mix'), '#fbbf24', progress, cauldronHasContents() && cooldown === 0);
 }
 
 function drawClearButton() {
-  const rect = clearButtonRect();
+  const rect = layout.clearButton();
   const progress = Math.max(hands.Left.clearMs, hands.Right.clearMs) / CLEAR_DWELL_MS;
   drawButton(rect, t(lang, 'empty'), '#f87171', progress, cauldronHasContents());
 }
@@ -993,7 +915,7 @@ function drawFloating() {
 }
 
 function drawPalette(time: number) {
-  const tiles = paletteTiles();
+  const tiles = layout.tiles();
   for (const t of tiles) {
     const el = ELEMENTS[t.symbol];
     roundRect(t.x, t.y, t.size, t.size, t.size * 0.18);
@@ -1035,7 +957,7 @@ function drawPalette(time: number) {
 function drawShelf(time: number) {
   const total = invList().length;
   const pad = 16 * DPR;
-  const cells = shelfCells();
+  const cells = layout.shelf(invList());
   const labelY = (cells[0]?.y ?? canvas.height - 86 * DPR) - 18 * DPR;
 
   ctx.textAlign = 'left';
