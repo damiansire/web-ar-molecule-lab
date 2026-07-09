@@ -81,12 +81,6 @@ export interface Molecule {
   bonds: Bond[];
 }
 
-/** Una mano sostiene N unidades de un elemento. */
-export interface ElementStack {
-  symbol: ElementSymbol;
-  count: number;
-}
-
 // ---------------------------------------------------------------------------
 // Catálogo de elementos
 // ---------------------------------------------------------------------------
@@ -440,39 +434,8 @@ export const MOLECULES: Molecule[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Combinación por estequiometría
+// Formato de recetas
 // ---------------------------------------------------------------------------
-/** Clave canónica de una composición: símbolos ordenados, p.ej. "H2O1". */
-function compositionKey(c: Composition): string {
-  return (Object.keys(c) as ElementSymbol[])
-    .filter((s) => (c[s] ?? 0) > 0)
-    .sort()
-    .map((s) => `${s}${c[s]}`)
-    .join('');
-}
-
-const BY_COMPOSITION: Record<string, Molecule> = Object.fromEntries(
-  MOLECULES.map((m) => [compositionKey(m.composition), m]),
-);
-
-/** Suma las dos pilas en una composición total (mismo símbolo se acumula). */
-export function mergeStacks(a: ElementStack, b: ElementStack): Composition {
-  const out: Composition = {};
-  for (const stack of [a, b]) {
-    if (stack.count > 0) out[stack.symbol] = (out[stack.symbol] ?? 0) + stack.count;
-  }
-  return out;
-}
-
-/**
- * Combina lo que sostienen las dos manos respetando la estequiometría.
- * Es orden-independiente y devuelve `null` si la composición exacta no
- * corresponde a ninguna molécula conocida (faltan/sobran átomos).
- */
-export function combineStacks(a: ElementStack, b: ElementStack): Molecule | null {
-  return BY_COMPOSITION[compositionKey(mergeStacks(a, b))] ?? null;
-}
-
 /** Texto de receta legible, p.ej. "2 H + 1 O". */
 export function recipeText(c: Composition): string {
   return (Object.keys(c) as ElementSymbol[])

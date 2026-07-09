@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  combineStacks,
-  mergeStacks,
   recipeText,
   brew,
   ingredientKey,
@@ -13,61 +11,35 @@ import {
   MOLECULES,
   ELEMENTS,
   ELEMENT_ORDER,
+  type Composition,
   type ElementSymbol,
-  type ElementStack,
 } from './chemistry';
 
-const stack = (symbol: ElementSymbol, count: number): ElementStack => ({ symbol, count });
-
-describe('combineStacks (estequiometría)', () => {
-  it('forma agua con 2 H + 1 O', () => {
-    const m = combineStacks(stack('H', 2), stack('O', 1));
-    expect(m?.formula).toBe('H₂O');
-    expect(m?.name).toBe('Water');
-  });
-
-  it('es independiente del orden de las manos', () => {
-    expect(combineStacks(stack('H', 2), stack('O', 1))).toEqual(
-      combineStacks(stack('O', 1), stack('H', 2)),
-    );
+describe('brew: moléculas base desde átomos sueltos', () => {
+  // Cubre el motor REAL de mezcla (brew, el que usa el cuenco). El motor
+  // paralelo `combineStacks`/`mergeStacks` que probaba esta misma tabla se
+  // eliminó por muerto en producción (ver _audits/SCORECARD.md, hallazgo
+  // "dos motores de estequiometría"); esta tabla es su reemplazo directo.
+  it.each<[Composition, string]>([
+    [{ H: 2, O: 1 }, 'H₂O'],
+    [{ C: 1, O: 2 }, 'CO₂'],
+    [{ N: 1, H: 3 }, 'NH₃'],
+    [{ C: 1, H: 4 }, 'CH₄'],
+    [{ Na: 1, Cl: 1 }, 'NaCl'],
+    [{ H: 1, Cl: 1 }, 'HCl'],
+    [{ H: 2 }, 'H₂'],
+    [{ O: 2 }, 'O₂'],
+    [{ N: 2 }, 'N₂'],
+  ])('forma %o → %s', (composition, formula) => {
+    expect(brew(composition)?.formula).toBe(formula);
   });
 
   it('respeta las proporciones: 1 H + 1 O no es agua', () => {
-    expect(combineStacks(stack('H', 1), stack('O', 1))).toBeNull();
-  });
-
-  it.each<[ElementStack, ElementStack, string]>([
-    [stack('C', 1), stack('O', 2), 'CO₂'],
-    [stack('N', 1), stack('H', 3), 'NH₃'],
-    [stack('C', 1), stack('H', 4), 'CH₄'],
-    [stack('Na', 1), stack('Cl', 1), 'NaCl'],
-    [stack('H', 1), stack('Cl', 1), 'HCl'],
-    [stack('H', 1), stack('H', 1), 'H₂'],
-    [stack('O', 1), stack('O', 1), 'O₂'],
-    [stack('N', 1), stack('N', 1), 'N₂'],
-  ])('combina %o + %o → %s', (a, b, formula) => {
-    expect(combineStacks(a, b)?.formula).toBe(formula);
-  });
-
-  it('una pila vacía (count 0) no aporta átomos', () => {
-    // 1 H solo no alcanza para ninguna molécula.
-    expect(combineStacks(stack('H', 1), stack('O', 0))).toBeNull();
-    // 2 H aunque la otra mano esté vacía ya forman H₂.
-    expect(combineStacks(stack('H', 2), stack('O', 0))?.formula).toBe('H₂');
+    expect(brew({ H: 1, O: 1 })).toBeNull();
   });
 
   it('devuelve null para composición sin receta', () => {
-    expect(combineStacks(stack('Na', 1), stack('C', 1))).toBeNull();
-    expect(combineStacks(stack('H', 5), stack('O', 1))).toBeNull();
-  });
-});
-
-describe('mergeStacks', () => {
-  it('acumula el mismo símbolo', () => {
-    expect(mergeStacks(stack('H', 1), stack('H', 1))).toEqual({ H: 2 });
-  });
-  it('ignora counts en cero', () => {
-    expect(mergeStacks(stack('H', 2), stack('O', 0))).toEqual({ H: 2 });
+    expect(brew({ Na: 1, C: 1 })).toBeNull();
   });
 });
 

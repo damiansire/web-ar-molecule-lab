@@ -21,7 +21,8 @@ describe('catálogo de strings', () => {
   // Las claves que el código usa; si falta una traducción, t() devolvería undefined.
   const KEYS: UIKey[] = [
     'title', 'lead', 'start', 'privacy', 'statusIdle', 'statusWarmup', 'statusReady',
-    'statusCam', 'statusErr', 'cauldron', 'cauldronHint', 'mix', 'empty',
+    'statusCam', 'statusErr', 'statusErrPermission', 'statusErrNoCamera', 'statusErrModel',
+    'cauldron', 'cauldronHint', 'mix', 'empty',
     'inventory', 'inventoryEmpty', 'voiceHint', 'emptyCauldron', 'noReaction',
     'emptied', 'freeHand', 'nothingInHand', 'handLeft', 'handRight', 'hands',
   ];

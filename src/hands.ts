@@ -37,6 +37,13 @@ const MIN_DETECT_INTERVAL_MS = 33; // ~30 Hz
 // se perdió el mensaje o murió y reseteamos `busy` para no congelar el tracking.
 export const WORKER_RESULT_TIMEOUT_MS = 2000;
 
+// Si el handshake de init() (worker listo o CDN de MediaPipe respondiendo) no
+// resuelve en este lapso, asumimos que el worker/CDN está colgado y caemos al
+// fallback síncrono en vez de dejar al usuario esperando para siempre en
+// "Cargando…" (el watchdog de arriba cubre el pump por-frame; este cubre el
+// arranque, que hoy no tenía ningún límite).
+export const WORKER_INIT_TIMEOUT_MS = 9000;
+
 /**
  * ¿El back-pressure del worker está vencido? Lógica pura del watchdog: dado que
  * hay un frame en vuelo (`busy`), decide si ya pasó demasiado tiempo desde el
@@ -84,18 +91,28 @@ export class HandTracker {
       // MediaPipe usa importScripts para su loader de WASM.
       const worker = new Worker('/hands-worker.js');
       await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => { cleanup(); reject(new Error('hand worker init timed out (CDN/WASM colgado)')); },
+          WORKER_INIT_TIMEOUT_MS,
+        );
         const onMsg = (e: MessageEvent) => {
           if (e.data?.type === 'ready') { cleanup(); resolve(); }
           else if (e.data?.type === 'error') { cleanup(); reject(new Error(e.data.message)); }
         };
         const onErr = () => { cleanup(); reject(new Error('hand worker failed to start')); };
         const cleanup = () => {
+          clearTimeout(timer);
           worker.removeEventListener('message', onMsg);
           worker.removeEventListener('error', onErr);
         };
         worker.addEventListener('message', onMsg);
         worker.addEventListener('error', onErr);
         worker.postMessage({ type: 'init' });
+      }).catch((err) => {
+        // El timeout deja un worker a medio inicializar (o realmente colgado):
+        // no lo dejamos vivo, el catch externo va a intentar el fallback síncrono.
+        try { worker.terminate(); } catch { /* noop */ }
+        throw err;
       });
       // Recepción continua de resultados.
       worker.addEventListener('message', (e: MessageEvent) => {

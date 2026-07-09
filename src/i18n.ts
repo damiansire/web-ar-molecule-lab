@@ -26,7 +26,7 @@ export const LANG_NAME: Record<Lang, string> = { es: 'Español', en: 'English', 
 
 export type UIKey =
   | 'title' | 'lead' | 'start' | 'privacy' | 'statusIdle' | 'statusWarmup' | 'statusReady'
-  | 'statusCam' | 'statusErr'
+  | 'statusCam' | 'statusErr' | 'statusErrPermission' | 'statusErrNoCamera' | 'statusErrModel'
   | 'cauldron' | 'cauldronHint' | 'mix' | 'empty' | 'inventory' | 'inventoryEmpty'
   | 'voiceHint' | 'emptyCauldron' | 'noReaction' | 'emptied' | 'freeHand'
   | 'nothingInHand' | 'handLeft' | 'handRight' | 'hands';
@@ -42,6 +42,9 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     statusReady: '✨ Listo — tocá empezar',
     statusCam: 'Pidiendo la cámara…',
     statusErr: 'No se pudo acceder a la cámara. Revisá permisos y recargá.',
+    statusErrPermission: 'Permiso de cámara denegado. Dale acceso y recargá.',
+    statusErrNoCamera: 'No se encontró ninguna cámara en este dispositivo.',
+    statusErrModel: 'No se pudo cargar el modelo de seguimiento de manos. Revisá tu conexión y recargá.',
     cauldron: '⚗ Cuenco',
     cauldronHint: 'acercá un átomo',
     mix: '✨ Mezclar',
@@ -68,6 +71,9 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     statusReady: '✨ Ready — tap to start',
     statusCam: 'Requesting the camera…',
     statusErr: "Couldn't access the camera. Check permissions and reload.",
+    statusErrPermission: 'Camera permission denied. Allow access and reload.',
+    statusErrNoCamera: 'No camera found on this device.',
+    statusErrModel: "Couldn't load the hand-tracking model. Check your connection and reload.",
     cauldron: '⚗ Cauldron',
     cauldronHint: 'bring an atom closer',
     mix: '✨ Mix',
@@ -94,6 +100,9 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     statusReady: '✨ Pronto — tocca per iniziare',
     statusCam: 'Richiesta della fotocamera…',
     statusErr: "Impossibile accedere alla fotocamera. Controlla i permessi e ricarica.",
+    statusErrPermission: "Permesso fotocamera negato. Consenti l'accesso e ricarica.",
+    statusErrNoCamera: 'Nessuna fotocamera trovata su questo dispositivo.',
+    statusErrModel: 'Impossibile caricare il modello di tracciamento delle mani. Controlla la connessione e ricarica.',
     cauldron: '⚗ Calderone',
     cauldronHint: 'avvicina un atomo',
     mix: '✨ Mescola',
@@ -120,6 +129,9 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     statusReady: '✨ Pronto — toque para começar',
     statusCam: 'Pedindo a câmera…',
     statusErr: 'Não foi possível acessar a câmera. Verifique as permissões e recarregue.',
+    statusErrPermission: 'Permissão de câmera negada. Permita o acesso e recarregue.',
+    statusErrNoCamera: 'Nenhuma câmera encontrada neste dispositivo.',
+    statusErrModel: 'Não foi possível carregar o modelo de rastreamento de mãos. Verifique sua conexão e recarregue.',
     cauldron: '⚗ Caldeirão',
     cauldronHint: 'aproxime um átomo',
     mix: '✨ Misturar',

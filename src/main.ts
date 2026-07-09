@@ -286,7 +286,7 @@ async function start() {
     await video.play();
 
     const ok = await preloadModel();
-    if (!ok) throw new Error('model not ready');
+    if (!ok) throw new Error('MODEL_NOT_READY');
 
     audioCtx = new AudioContext();
     resetGame();
@@ -300,10 +300,26 @@ async function start() {
   } catch (err) {
     console.error(err);
     stopCamera();
-    statusEl.textContent = t(lang, 'statusErr');
+    statusEl.textContent = t(lang, startFailureKey(err));
     statusEl.classList.add('error');
     startBtn.disabled = false;
   }
+}
+
+/**
+ * Distingue el diagnóstico correcto según qué falló: permiso de cámara
+ * denegado, sin cámara físicamente, modelo de manos que no cargó, o algo
+ * genérico. Antes todo colapsaba en "revisá permisos de cámara" incluso
+ * cuando el problema era el modelo (falso diagnóstico que manda al usuario a
+ * revisar un permiso que ya tenía bien).
+ */
+function startFailureKey(err: unknown): 'statusErrPermission' | 'statusErrNoCamera' | 'statusErrModel' | 'statusErr' {
+  if (err instanceof Error && err.message === 'MODEL_NOT_READY') return 'statusErrModel';
+  if (err instanceof DOMException) {
+    if (err.name === 'NotAllowedError' || err.name === 'SecurityError') return 'statusErrPermission';
+    if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') return 'statusErrNoCamera';
+  }
+  return 'statusErr';
 }
 
 /** Apaga la cámara: detiene todas las pistas del stream y lo descarta. */
