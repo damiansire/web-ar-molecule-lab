@@ -1,0 +1,27 @@
+name: CI
+
+# Gate real de la suite: typecheck + tests en cada push y PR, a cualquier rama.
+# deploy.yml corre `verify` solo en push a master (antes de publicar); este
+# workflow cierra el hueco de las PRs y las ramas de trabajo, que nunca
+# ejercitaban los tests.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # `verify` = tsc --noEmit && vitest run (el mismo gate que corre local).
+      # No necesita el vendoreo de MediaPipe: tsc tipa desde node_modules y
+      # los tests no leen public/mediapipe/. Si el job falla, falla el check.
+      - run: npm run verify
