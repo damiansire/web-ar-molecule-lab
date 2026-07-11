@@ -250,3 +250,49 @@ export class HandTracker {
 export const LM = {
   INDEX_TIP: 8,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Slots de mano (Left/Right): resolución de qué mano detectada va a cuál slot
+// ---------------------------------------------------------------------------
+/**
+ * A qué "slot" de la UI (mano izquierda/derecha) se asigna una detección.
+ * Vive acá (no en main.ts) porque depende de `Hand`/`LM`, no del estado de
+ * juego: es lógica pura de tracking, testeable sin DOM ni cámara.
+ */
+export type HandSlot = 'Left' | 'Right';
+export const HAND_SLOTS: readonly HandSlot[] = ['Left', 'Right'];
+
+/** Posición del índice de una mano en pixels del canvas (espejado en X). */
+export interface SlotPosition {
+  present: boolean;
+  x: number;
+  y: number;
+}
+
+const ABSENT_SLOT: SlotPosition = { present: false, x: 0, y: 0 };
+
+/**
+ * Asigna cada mano detectada a un slot Left/Right y convierte su punta de
+ * índice a pixels del canvas (espejado, como el video). MediaPipe puede
+ * reportar dos manos con la misma `handedness` (falso positivo del modelo o
+ * mano ambigua): si el slot que le toca ya está ocupado, prueba el otro; si
+ * los dos ya están ocupados, esa detección se descarta en vez de pisar una
+ * mano ya resuelta.
+ */
+export function resolveHandSlots(
+  detected: Hand[],
+  canvasWidth: number,
+  canvasHeight: number,
+): Record<HandSlot, SlotPosition> {
+  const result: Record<HandSlot, SlotPosition> = { Left: ABSENT_SLOT, Right: ABSENT_SLOT };
+  const used = new Set<HandSlot>();
+  for (const hand of detected) {
+    let slot: HandSlot = hand.handedness === 'Left' || hand.handedness === 'Right' ? hand.handedness : 'Left';
+    if (used.has(slot)) slot = slot === 'Left' ? 'Right' : 'Left';
+    if (used.has(slot)) continue;
+    used.add(slot);
+    const tip = hand.landmarks[LM.INDEX_TIP];
+    result[slot] = { present: true, x: (1 - tip.x) * canvasWidth, y: tip.y * canvasHeight };
+  }
+  return result;
+}

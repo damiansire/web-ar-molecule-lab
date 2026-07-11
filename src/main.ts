@@ -15,7 +15,7 @@ import {
   type Cauldron,
   type IngredientId,
 } from './chemistry';
-import { HandTracker, LM, type Hand } from './hands';
+import { HandTracker, resolveHandSlots, HAND_SLOTS, type Hand, type HandSlot } from './hands';
 import { ParticleSystem } from './particles';
 import { drawAtom, drawMolecule } from './structure';
 import { Scene3D } from './render3d';
@@ -172,10 +172,10 @@ const makeHand = (): HandState => ({
   dwellSymbol: null, dwellMs: 0, depositMs: 0, mixMs: 0, clearMs: 0,
   shelfId: null, shelfMs: 0,
 });
-type SlotName = 'Left' | 'Right';
-// Constante reusada en el hot path: evita crear un array nuevo por frame en cada
-// loop sobre las dos manos (syncHands, updateInteraction, render, draws).
-const SLOTS: readonly SlotName[] = ['Left', 'Right'];
+// `SlotName`/`SLOTS` son un alias local de `HandSlot`/`HAND_SLOTS` (hands.ts):
+// acá se usan para el estado de JUEGO por mano (dwell, held...), no el tracking.
+type SlotName = HandSlot;
+const SLOTS = HAND_SLOTS;
 const hands: Record<SlotName, HandState> = { Left: makeHand(), Right: makeHand() };
 
 // El cuenco de alquimia: multiset de ingredientes acumulados (átomos y/o productos).
@@ -397,24 +397,18 @@ function drawPerfHud() {
 // ---------------------------------------------------------------------------
 // Tracking → slots
 // ---------------------------------------------------------------------------
+// La resolución de qué mano detectada va a cuál slot (Left/Right) y su punta de
+// índice en pixels vive en hands.ts (resolveHandSlots): es tracking puro, no
+// estado de juego. Acá solo se vuelca ese resultado sobre `hands` y se resetea
+// el dwell de la mano que dejó de estar presente.
 function syncHands(detected: Hand[]) {
-  hands.Left.present = false;
-  hands.Right.present = false;
-  const used = new Set<SlotName>();
-  for (const hand of detected) {
-    let slot: SlotName =
-      hand.handedness === 'Left' || hand.handedness === 'Right' ? hand.handedness : 'Left';
-    if (used.has(slot)) slot = slot === 'Left' ? 'Right' : 'Left';
-    if (used.has(slot)) continue;
-    used.add(slot);
-    const tip = hand.landmarks[LM.INDEX_TIP];
-    const st = hands[slot];
-    st.present = true;
-    st.x = (1 - tip.x) * canvas.width;
-    st.y = tip.y * canvas.height;
-  }
+  const resolved = resolveHandSlots(detected, canvas.width, canvas.height);
   for (const name of SLOTS) {
-    if (!hands[name].present) resetDwell(hands[name]);
+    const slot = resolved[name];
+    const st = hands[name];
+    st.present = slot.present;
+    if (slot.present) { st.x = slot.x; st.y = slot.y; }
+    else resetDwell(st);
   }
 }
 
