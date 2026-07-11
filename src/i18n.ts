@@ -29,7 +29,9 @@ export type UIKey =
   | 'statusCam' | 'statusErr' | 'statusErrPermission' | 'statusErrNoCamera' | 'statusErrModel'
   | 'cauldron' | 'cauldronHint' | 'mix' | 'empty' | 'inventory' | 'inventoryEmpty'
   | 'voiceHint' | 'emptyCauldron' | 'noReaction' | 'emptied' | 'freeHand'
-  | 'nothingInHand' | 'handLeft' | 'handRight' | 'hands';
+  | 'nothingInHand' | 'handLeft' | 'handRight' | 'hands'
+  | 'startManual' | 'manualHint'
+  | 'consentTitle' | 'consentBody' | 'consentAccept' | 'consentDecline';
 
 const STRINGS: Record<Lang, Record<UIKey, string>> = {
   es: {
@@ -60,6 +62,12 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     handLeft: 'la mano izquierda',
     handRight: 'la mano derecha',
     hands: 'tus manos',
+    startManual: '¿Sin cámara? Jugar con teclado/mouse',
+    manualHint: '⌨ flechas: moverte · Enter/click: elegir · M mezclar · C vaciar',
+    consentTitle: 'Antes de activar la cámara',
+    consentBody: 'Vamos a pedirte permiso de cámara (y micrófono, si querés jugar por voz). El video y el audio se procesan enteramente en tu dispositivo: nunca se suben a ningún servidor. Podés jugar sin cámara con el modo de teclado/mouse.',
+    consentAccept: 'Entendido, continuar',
+    consentDecline: 'Cancelar',
   },
   en: {
     title: 'Alchemy Cauldron',
@@ -89,6 +97,12 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     handLeft: 'the left hand',
     handRight: 'the right hand',
     hands: 'your hands',
+    startManual: 'No camera? Play with keyboard/mouse',
+    manualHint: '⌨ arrows: move · Enter/click: pick · M mix · C empty',
+    consentTitle: 'Before enabling the camera',
+    consentBody: "We're about to ask for camera access (and microphone, if you want to play by voice). Video and audio are processed entirely on your device — nothing is ever uploaded. You can also play without a camera using keyboard/mouse mode.",
+    consentAccept: 'Got it, continue',
+    consentDecline: 'Cancel',
   },
   it: {
     title: 'Calderone Alchemico',
@@ -118,6 +132,12 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     handLeft: 'la mano sinistra',
     handRight: 'la mano destra',
     hands: 'le tue mani',
+    startManual: 'Niente fotocamera? Gioca con tastiera/mouse',
+    manualHint: '⌨ frecce: muoviti · Invio/click: scegli · M mescola · C svuota',
+    consentTitle: 'Prima di attivare la fotocamera',
+    consentBody: 'Stiamo per chiedere il permesso della fotocamera (e del microfono, se vuoi giocare con la voce). Video e audio vengono elaborati interamente sul tuo dispositivo: non vengono mai caricati altrove. Puoi anche giocare senza fotocamera con la modalità tastiera/mouse.',
+    consentAccept: 'Capito, continua',
+    consentDecline: 'Annulla',
   },
   pt: {
     title: 'Caldeirão de Alquimia',
@@ -147,6 +167,12 @@ const STRINGS: Record<Lang, Record<UIKey, string>> = {
     handLeft: 'a mão esquerda',
     handRight: 'a mão direita',
     hands: 'suas mãos',
+    startManual: 'Sem câmera? Jogue com teclado/mouse',
+    manualHint: '⌨ setas: mover · Enter/clique: escolher · M misturar · C esvaziar',
+    consentTitle: 'Antes de ativar a câmera',
+    consentBody: 'Vamos pedir acesso à câmera (e ao microfone, se você quiser jogar por voz). O vídeo e o áudio são processados inteiramente no seu dispositivo: nada é enviado a nenhum servidor. Você também pode jogar sem câmera usando o modo teclado/mouse.',
+    consentAccept: 'Entendi, continuar',
+    consentDecline: 'Cancelar',
   },
 };
 

@@ -17,7 +17,8 @@ installs.
 
 ## How to play
 
-1. Click **Activate camera** and allow access.
+1. Click **Activate camera** and allow access. You'll see a short consent notice first
+   (what gets accessed and why) before the browser's own permission prompt.
 2. **Say the name of an atom** (“hydrogen”, “oxygen”…) and it appears in your hand. No
    microphone? Grab it from the **palette** at the top by holding your fingertip over it.
 3. **Bring your hand to the cauldron** to drop in what you are holding. Repeat to stack
@@ -28,6 +29,14 @@ installs.
 5. Anything you already made can be **re-summoned** by voice (“water”) or by taking it from
    the inventory **shelf** with your hand — and you can drop it back into the cauldron as
    an ingredient.
+
+### No camera? Keyboard and mouse work too
+
+Click **“No camera? Play with keyboard/mouse”** on the start screen to skip the camera
+entirely. Click any atom in the palette, a product on the shelf, or the Mix/Empty buttons
+to use them directly — or navigate with **arrow keys**/**Tab**, activate the focused item
+with **Enter**/**Space**, and use **M** (mix) / **C** (empty) as direct shortcuts. The
+keyboard shortcuts also work as a bonus alongside the camera, not only in this mode.
 
 > **Multilingual.** The interface and voice recognition are available in **Spanish, English,
 > Italian and Portuguese**; pick one with the language selector next to the camera box (the
@@ -61,13 +70,23 @@ or a recipe in `src/chemistry.ts`.
 
 Everything runs **on your device**. The camera stream and the hand-tracking model execute
 locally in your browser — the video never leaves your machine. Nothing is downloaded or
-contacted until you click *Activar cámara*.
+contacted until you click *Activate camera*.
+
+Before the first camera/microphone request, a **consent notice** explains what's about to
+be accessed and why (`src/privacy-consent.ts`); once accepted it's remembered in
+`localStorage` so you're not asked again on the same device. Declining the notice cancels
+the camera flow — you can still play fully with the [keyboard/mouse mode](#no-camera-keyboard-and-mouse-work-too),
+which never touches `getUserMedia`.
 
 ## Tech
 
 - **Vite + TypeScript**, rendered on a 2D `<canvas>` over the mirrored webcam.
 - **Hand tracking** via [MediaPipe Tasks Vision](https://developers.google.com/mediapipe),
-  running in a Web Worker so inference never blocks the render loop.
+  running in a Web Worker (`public/hands-worker.js`, classic — MediaPipe needs
+  `importScripts` for its WASM loader) so inference never blocks the render loop. Frames
+  are handed off as transferable `ImageBitmap`s over a typed message protocol
+  (`src/hands-worker-protocol.ts`); see `docs/perf/hand-tracking-frame-budget.md` for the
+  frame-budget breakdown.
 - **Voice** via the Web Speech API (optional; the game works fully with gestures alone). The
   recognizer locale follows the selected UI language (`es-ES` / `en-US` / `it-IT` / `pt-BR`).
 - **i18n** (`src/i18n.ts`): UI chrome and element/molecule names in Spanish, English, Italian

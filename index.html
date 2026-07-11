@@ -33,12 +33,26 @@
         <h1 id="title">Alchemy&nbsp;Cauldron</h1>
         <p class="lead">Enable your camera to play.</p>
         <button id="start" type="button">Enable camera</button>
+        <button id="manualStart" type="button" class="btn-manual">No camera? Play with keyboard/mouse</button>
         <p class="privacy">🔒 Runs on your device · your camera never leaves it</p>
         <p class="hint" id="status">Nothing loads until you start.</p>
       </div>
     </div>
 
     <aside id="info" class="hidden"></aside>
+
+    <!-- Consentimiento GDPR: se muestra una sola vez, antes del primer getUserMedia.
+         La decisión (aceptar) se persiste en localStorage (ver privacy-consent.ts). -->
+    <div id="consent" class="hidden" role="dialog" aria-modal="true" aria-labelledby="consentTitle">
+      <div class="card">
+        <h2 id="consentTitle">Before enabling the camera</h2>
+        <p id="consentBody"></p>
+        <div class="consent-actions">
+          <button id="consentAccept" type="button"></button>
+          <button id="consentDecline" type="button" class="btn-manual"></button>
+        </div>
+      </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -341,3 +341,75 @@ button#start:disabled {
 .hint.error {
   color: #f87171 !important;
 }
+
+/* --- Modo manual (sin cámara): botón secundario, discreto --- */
+.btn-manual {
+  display: block;
+  margin: 0.9rem auto 0;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.6rem 1.2rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.6rem;
+  color: #cbd5e1;
+  background: transparent;
+  transition: border-color 0.14s ease, color 0.14s ease;
+}
+
+.btn-manual:hover {
+  border-color: #7dd3fc;
+  color: #7dd3fc;
+}
+
+/* --- Consentimiento GDPR: modal simple encima del overlay de permisos --- */
+#consent {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(5, 6, 10, 0.72);
+  backdrop-filter: blur(3px);
+  transition: opacity 0.25s ease;
+}
+
+#consent.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#consent .card {
+  max-width: 30rem;
+}
+
+#consent h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.25rem;
+}
+
+#consent p {
+  margin: 0 0 1.5rem;
+  line-height: 1.5;
+  color: #cbd5e1;
+  font-size: 0.95rem;
+}
+
+.consent-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+#consentAccept {
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0.85rem 1.5rem;
+  border: none;
+  border-radius: 0.75rem;
+  color: #05060a;
+  background: linear-gradient(135deg, #7dd3fc, #38bdf8);
+}

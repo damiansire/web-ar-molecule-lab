@@ -24,6 +24,8 @@ import { createInventory } from './inventory';
 import { t, LANGS, LANG_LABEL, LANG_FLAG_SVG, LANG_NAME, type Lang } from './i18n';
 import { Layout, tileUnder, inRect, type Rect } from './layout';
 import { startFailureKey } from './media-errors';
+import { buildFocusSequence, nextFocusIndex, type ManualTarget } from './manual-control';
+import { hasConsent, grantConsent } from './privacy-consent';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -56,6 +58,7 @@ const overlay = document.querySelector<HTMLDivElement>('#overlay')!;
 const statusEl = document.querySelector<HTMLParagraphElement>('#status')!;
 const infoEl = document.querySelector<HTMLElement>('#info')!;
 const startBtn = document.querySelector<HTMLButtonElement>('#start')!;
+const manualStartBtn = document.querySelector<HTMLButtonElement>('#manualStart')!;
 
 // Density del canvas: usamos el devicePixelRatio real, capeado a 2, para que el
 // HUD (texto/vectores rasterizados directo en el canvas) no se vea borroso en
@@ -113,6 +116,44 @@ const titleEl = document.querySelector<HTMLHeadingElement>('#title');
 const leadEl = document.querySelector<HTMLParagraphElement>('.lead');
 const privacyEl = document.querySelector<HTMLParagraphElement>('.privacy');
 
+// ---------------------------------------------------------------------------
+// Consentimiento GDPR (modal, una sola vez): ver privacy-consent.ts
+// ---------------------------------------------------------------------------
+const consentEl = document.querySelector<HTMLDivElement>('#consent')!;
+const consentTitleEl = document.querySelector<HTMLHeadingElement>('#consentTitle');
+const consentBodyEl = document.querySelector<HTMLParagraphElement>('#consentBody');
+const consentAcceptBtn = document.querySelector<HTMLButtonElement>('#consentAccept')!;
+const consentDeclineBtn = document.querySelector<HTMLButtonElement>('#consentDecline')!;
+
+/**
+ * Se resuelve solo si el jugador ya consintió antes (localStorage) o acepta
+ * ahora en el modal; `false` si cancela. `start()` no debe pedir cámara/mic
+ * sin pasar por acá primero (fail-closed: sin consentimiento, no hay
+ * getUserMedia).
+ */
+function ensureConsent(): Promise<boolean> {
+  if (hasConsent()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    consentEl.classList.remove('hidden');
+    const onAccept = () => {
+      detach();
+      grantConsent();
+      resolve(true);
+    };
+    const onDecline = () => {
+      detach();
+      resolve(false);
+    };
+    function detach() {
+      consentEl.classList.add('hidden');
+      consentAcceptBtn.removeEventListener('click', onAccept);
+      consentDeclineBtn.removeEventListener('click', onDecline);
+    }
+    consentAcceptBtn.addEventListener('click', onAccept);
+    consentDeclineBtn.addEventListener('click', onDecline);
+  });
+}
+
 /** Aplica un idioma: textos del overlay, botones y —si ya se está jugando— la voz. */
 function applyLang(l: Lang) {
   const changed = l !== lang;
@@ -121,7 +162,12 @@ function applyLang(l: Lang) {
   if (titleEl) titleEl.textContent = t(l, 'title');
   if (leadEl) leadEl.textContent = t(l, 'lead');
   startBtn.textContent = t(l, 'start');
+  manualStartBtn.textContent = t(l, 'startManual');
   if (privacyEl) privacyEl.textContent = t(l, 'privacy');
+  if (consentTitleEl) consentTitleEl.textContent = t(l, 'consentTitle');
+  if (consentBodyEl) consentBodyEl.textContent = t(l, 'consentBody');
+  consentAcceptBtn.textContent = t(l, 'consentAccept');
+  consentDeclineBtn.textContent = t(l, 'consentDecline');
   // El status solo se pisa si seguimos en la pantalla idle (sin warmup en curso).
   if (!running && !modelReady) statusEl.textContent = t(l, 'statusIdle');
   renderLangButtons();
@@ -152,6 +198,12 @@ function renderLangButtons() {
 // Estado de juego
 // ---------------------------------------------------------------------------
 let running = false;
+// Modo de control manual (teclado + mouse/click, sin cámara ni voz — ver
+// manual-control.ts). El foco (índice en la secuencia átomos→estante→botones)
+// solo se dibuja/usa cuando el jugador tocó una tecla de navegación al menos
+// una vez; `null` = todavía no se activó.
+let manualMode = false;
+let manualFocusIndex: number | null = null;
 
 interface HandState {
   present: boolean; x: number; y: number;
@@ -260,6 +312,8 @@ async function requestMedia(): Promise<MediaStream> {
 async function start() {
   startBtn.disabled = true;
   try {
+    const consented = await ensureConsent();
+    if (!consented) { startBtn.disabled = false; return; }
     statusEl.textContent = t(lang, 'statusCam');
     const stream = await requestMedia();
     camStream = stream;
@@ -289,6 +343,24 @@ async function start() {
   }
 }
 
+/**
+ * Arranca sin cámara/mic: modo de control manual (teclado + mouse/click). No
+ * pide ningún permiso — `loop()` ya tolera no tener video (video.readyState
+ * nunca llega a 2, tracker.pump no se llama, tracker.hands queda vacío) y el
+ * resto del juego (cuenco, mezcla, inventario) es independiente del tracking.
+ */
+function startManual() {
+  manualMode = true;
+  audioCtx = new AudioContext();
+  resetGame();
+  overlay.classList.add('hidden');
+  running = true;
+  manualFocusIndex = 0;
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+}
+manualStartBtn.addEventListener('click', startManual);
+
 /** Apaga la cámara: detiene todas las pistas del stream y lo descarta. */
 function stopCamera() {
   if (camStream) {
@@ -301,6 +373,8 @@ function stopCamera() {
 /** Teardown global: no deja cámara, micrófono, worker ni audio vivos. */
 function teardown() {
   running = false;
+  manualMode = false;
+  manualFocusIndex = null;
   stopCamera();
   voice.stop();
   voiceListening = false;
@@ -495,6 +569,110 @@ function deposit(st: HandState) {
 function cauldronHasContents(): boolean {
   return cauldronIds().length > 0;
 }
+
+// ---------------------------------------------------------------------------
+// Control manual (teclado + mouse/click) — ver manual-control.ts
+// ---------------------------------------------------------------------------
+/** Mete 1 unidad de `id` directo en el cuenco (sin pasar por "sostener en la mano"). */
+function addToCauldron(id: IngredientId) {
+  const c = layout.cauldron();
+  contents[id] = (contents[id] ?? 0) + 1;
+  invalidateCauldron();
+  particles.burst(c.cx, c.cy, ingredientColor(id), 30, 280 * DPR);
+  playChime(true);
+}
+
+/** Secuencia de foco vigente: átomos de la paleta → estante → Mezclar → Vaciar. */
+function manualSequence(): ManualTarget[] {
+  return buildFocusSequence(layout.tiles().length, layout.shelf(invList()).length);
+}
+
+/** Mueve el foco del modo manual con flechas/Tab (da la vuelta en los bordes). */
+function moveManualFocus(direction: 1 | -1) {
+  const len = manualSequence().length;
+  manualFocusIndex = nextFocusIndex(manualFocusIndex, len, direction);
+}
+
+/** Ejecuta la acción del elemento con foco (Enter/click). */
+function activateManualTarget(target: ManualTarget) {
+  switch (target.kind) {
+    case 'atom': {
+      const tile = layout.tiles()[target.index];
+      if (tile) addToCauldron(tile.symbol);
+      return;
+    }
+    case 'shelf': {
+      const cell = layout.shelf(invList())[target.index];
+      if (cell) addToCauldron(cell.formula);
+      return;
+    }
+    case 'mix':
+      mezclar();
+      return;
+    case 'clear':
+      clearCauldron();
+      return;
+    default: {
+      const _exhaustive: never = target;
+      return _exhaustive;
+    }
+  }
+}
+
+/** Activa el elemento con foco actual (no hace nada si todavía no hay foco). */
+function activateManualFocus() {
+  if (manualFocusIndex === null) return;
+  const target = manualSequence()[manualFocusIndex];
+  if (target) activateManualTarget(target);
+}
+
+/**
+ * Teclado: flechas/Tab navegan la secuencia de foco, Enter/Espacio activan,
+ * M/C son atajos directos a Mezclar/Vaciar (funcionan aunque no haya foco), y
+ * Escape suelta el foco visual. Activo mientras el juego está corriendo,
+ * tanto en modo manual como con cámara (bonus de accesibilidad: no hace falta
+ * estar en modo manual para usar teclado).
+ */
+window.addEventListener('keydown', (e) => {
+  if (!running) return;
+  switch (e.key) {
+    case 'ArrowRight': case 'ArrowDown':
+      moveManualFocus(1); e.preventDefault(); break;
+    case 'ArrowLeft': case 'ArrowUp':
+      moveManualFocus(-1); e.preventDefault(); break;
+    case 'Tab':
+      moveManualFocus(e.shiftKey ? -1 : 1); e.preventDefault(); break;
+    case 'Enter': case ' ':
+      activateManualFocus(); e.preventDefault(); break;
+    case 'Escape':
+      manualFocusIndex = null; break;
+    case 'm': case 'M':
+      mezclar(); break;
+    case 'c': case 'C':
+      clearCauldron(); break;
+    default:
+      break;
+  }
+});
+
+/** Mouse/touch: click directo sobre paleta, estante o botones (sin dwell). */
+canvas.addEventListener('click', (e) => {
+  if (!running) return;
+  const rect = canvas.getBoundingClientRect();
+  const px = ((e.clientX - rect.left) / rect.width) * canvas.width;
+  const py = ((e.clientY - rect.top) / rect.height) * canvas.height;
+
+  const tiles = layout.tiles();
+  const tileIndex = tiles.findIndex((tl) => tileUnder(px, py, [tl]));
+  if (tileIndex >= 0) { addToCauldron(tiles[tileIndex].symbol); return; }
+
+  const cells = layout.shelf(invList());
+  const cellIndex = cells.findIndex((c) => inRect(px, py, c));
+  if (cellIndex >= 0) { addToCauldron(cells[cellIndex].formula); return; }
+
+  if (inRect(px, py, layout.mixButton())) { mezclar(); return; }
+  if (inRect(px, py, layout.clearButton())) { clearCauldron(); }
+});
 
 /**
  * Resuelve el cuenco con lo que tiene adentro. Los guards viven acá (no en el
@@ -700,7 +878,10 @@ function playChime(success: boolean) {
 // ---------------------------------------------------------------------------
 function render(time: number) {
   if (use3D) scene3d.beginFrame();
-  drawVideoMirrored();
+  // Modo manual: no hay stream de video que dibujar (drawImage sobre un
+  // <video> sin srcObject tira InvalidStateError) — fondo sólido, como idle.
+  if (manualMode) { ctx.fillStyle = '#070912'; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+  else drawVideoMirrored();
   drawCauldron(time);
   drawFloating();
   drawPalette(time);
@@ -708,6 +889,8 @@ function render(time: number) {
   drawClearButton();
   drawShelf(time);
   drawVoiceHint();
+  drawManualHint();
+  drawManualFocus();
   for (const name of SLOTS) drawHand(hands[name], time);
   particles.draw(ctx);
   drawToasts();
@@ -999,6 +1182,51 @@ function drawVoiceHint() {
   ctx.fillStyle = 'rgba(226, 232, 240, 0.9)';
   ctx.font = `600 ${14 * DPR}px system-ui, sans-serif`;
   ctx.fillText(t(lang, 'voiceHint'), x + 26 * DPR, y);
+}
+
+/**
+ * Hint del modo manual: mismo rincón que el de voz (esquina superior
+ * izquierda) — nunca se solapan, en modo manual la voz no se activa. Debajo
+ * del `#langbar` persistente (que ocupa la franja superior) para no quedar
+ * tapado por él.
+ */
+function drawManualHint() {
+  if (!manualMode) return;
+  const x = 18 * DPR;
+  const y = 58 * DPR;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.85)';
+  ctx.font = `600 ${13 * DPR}px system-ui, sans-serif`;
+  ctx.fillText(t(lang, 'manualHint'), x, y);
+}
+
+/** Anillo punteado sobre el elemento con foco de teclado (átomo/estante/botón). */
+function drawManualFocus() {
+  if (manualFocusIndex === null) return;
+  const target = manualSequence()[manualFocusIndex];
+  if (!target) return;
+  const pad = 4 * DPR;
+  let rect: Rect | null = null;
+  if (target.kind === 'atom') {
+    const tile = layout.tiles()[target.index];
+    if (tile) rect = { x: tile.x, y: tile.y, w: tile.size, h: tile.size };
+  } else if (target.kind === 'shelf') {
+    const cell = layout.shelf(invList())[target.index];
+    if (cell) rect = cell;
+  } else if (target.kind === 'mix') {
+    rect = layout.mixButton();
+  } else if (target.kind === 'clear') {
+    rect = layout.clearButton();
+  }
+  if (!rect) return;
+  roundRect(rect.x - pad, rect.y - pad, rect.w + pad * 2, rect.h + pad * 2, 14 * DPR);
+  ctx.save();
+  ctx.setLineDash([6 * DPR, 5 * DPR]);
+  ctx.lineWidth = 3 * DPR;
+  ctx.strokeStyle = '#67e8f9';
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawHand(st: HandState, time: number) {

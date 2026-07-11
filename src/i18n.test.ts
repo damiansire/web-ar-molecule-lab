@@ -25,6 +25,8 @@ describe('catálogo de strings', () => {
     'cauldron', 'cauldronHint', 'mix', 'empty',
     'inventory', 'inventoryEmpty', 'voiceHint', 'emptyCauldron', 'noReaction',
     'emptied', 'freeHand', 'nothingInHand', 'handLeft', 'handRight', 'hands',
+    'startManual', 'manualHint',
+    'consentTitle', 'consentBody', 'consentAccept', 'consentDecline',
   ];
 
   it('los 4 idiomas tienen todas las claves con texto no vacío', () => {
