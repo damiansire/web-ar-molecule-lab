@@ -7,7 +7,8 @@
  * "ModuleFactory not set"). El bundle ESM de MediaPipe se trae con import()
  * dinámico, que sí está permitido dentro de un classic worker.
  *
- * Protocolo:
+ * Protocolo: ver `src/hands-worker-protocol.ts` (fuente de verdad tipada; este
+ * archivo es JS clásico y no puede importarla, pero DEBE mirrorear sus formas):
  *   main → worker: { type:'init' } | { type:'frame', bitmap, timestamp }
  *   worker → main: { type:'ready' } | { type:'error', message } | { type:'result', hands }
  */

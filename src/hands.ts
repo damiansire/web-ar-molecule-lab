@@ -12,6 +12,7 @@ import {
   FilesetResolver,
   type NormalizedLandmark,
 } from '@mediapipe/tasks-vision';
+import { isWorkerToMainMessage, type MainToWorkerMessage } from './hands-worker-protocol';
 
 // Vendorizado desde npm a public/mediapipe/ por scripts/vendor-mediapipe.mjs
 // (predev/prebuild) — servido desde 'self', no jsdelivr. BASE_URL resuelve
@@ -106,8 +107,9 @@ export class HandTracker {
           WORKER_INIT_TIMEOUT_MS,
         );
         const onMsg = (e: MessageEvent) => {
-          if (e.data?.type === 'ready') { cleanup(); resolve(); }
-          else if (e.data?.type === 'error') { cleanup(); reject(new Error(e.data.message)); }
+          if (!isWorkerToMainMessage(e.data)) return;
+          if (e.data.type === 'ready') { cleanup(); resolve(); }
+          else if (e.data.type === 'error') { cleanup(); reject(new Error(e.data.message)); }
         };
         const onErr = () => { cleanup(); reject(new Error('hand worker failed to start')); };
         const cleanup = () => {
@@ -117,7 +119,7 @@ export class HandTracker {
         };
         worker.addEventListener('message', onMsg);
         worker.addEventListener('error', onErr);
-        worker.postMessage({ type: 'init' });
+        this.postToWorker(worker, { type: 'init' });
       }).catch((err) => {
         // El timeout deja un worker a medio inicializar (o realmente colgado):
         // no lo dejamos vivo, el catch externo va a intentar el fallback síncrono.
@@ -126,11 +128,10 @@ export class HandTracker {
       });
       // Recepción continua de resultados.
       worker.addEventListener('message', (e: MessageEvent) => {
-        if (e.data?.type === 'result') {
-          this._hands = e.data.hands as Hand[];
-          this.busy = false;
-          this.resultCount++;
-        }
+        if (!isWorkerToMainMessage(e.data) || e.data.type !== 'result') return;
+        this._hands = e.data.hands;
+        this.busy = false;
+        this.resultCount++;
       });
       // Si el worker muere tras el init (OOM de WASM, crash del delegate GPU),
       // no queremos que `busy` quede `true` para siempre y congele el tracking:
@@ -145,6 +146,15 @@ export class HandTracker {
       console.warn('Hand worker no disponible; uso detección síncrona.', err);
       await this.initSync();
     }
+  }
+
+  /**
+   * `postMessage` tipado contra `MainToWorkerMessage` (hands-worker-protocol.ts):
+   * evita armar el objeto del mensaje suelto en cada call-site, donde un typo
+   * en `type` o un campo faltante no lo agarra el compilador.
+   */
+  private postToWorker(worker: Worker, msg: MainToWorkerMessage, transfer: Transferable[] = []): void {
+    worker.postMessage(msg, transfer);
   }
 
   /** Limpia el estado del worker perdido y arranca el fallback síncrono. */
@@ -191,7 +201,7 @@ export class HandTracker {
       this.lastPumpAt = now;
       this.busy = true;
       this.lastPostAt = now;
-      this.worker.postMessage({ type: 'frame', bitmap, timestamp: Math.round(now) }, [bitmap]);
+      this.postToWorker(this.worker, { type: 'frame', bitmap, timestamp: Math.round(now) }, [bitmap]);
       return;
     }
 
