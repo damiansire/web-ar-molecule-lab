@@ -23,6 +23,7 @@ import { VoiceRecognizer, resolveLang, type ProductLexEntry, type VoiceCommand }
 import { createInventory } from './inventory';
 import { t, LANGS, LANG_LABEL, LANG_FLAG_SVG, LANG_NAME, type Lang } from './i18n';
 import { Layout, tileUnder, inRect, type Rect } from './layout';
+import { startFailureKey } from './media-errors';
 
 // ---------------------------------------------------------------------------
 // Constantes
@@ -286,22 +287,6 @@ async function start() {
     statusEl.classList.add('error');
     startBtn.disabled = false;
   }
-}
-
-/**
- * Distingue el diagnóstico correcto según qué falló: permiso de cámara
- * denegado, sin cámara físicamente, modelo de manos que no cargó, o algo
- * genérico. Antes todo colapsaba en "revisá permisos de cámara" incluso
- * cuando el problema era el modelo (falso diagnóstico que manda al usuario a
- * revisar un permiso que ya tenía bien).
- */
-function startFailureKey(err: unknown): 'statusErrPermission' | 'statusErrNoCamera' | 'statusErrModel' | 'statusErr' {
-  if (err instanceof Error && err.message === 'MODEL_NOT_READY') return 'statusErrModel';
-  if (err instanceof DOMException) {
-    if (err.name === 'NotAllowedError' || err.name === 'SecurityError') return 'statusErrPermission';
-    if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError') return 'statusErrNoCamera';
-  }
-  return 'statusErr';
 }
 
 /** Apaga la cámara: detiene todas las pistas del stream y lo descarta. */
